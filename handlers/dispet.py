@@ -3,12 +3,10 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-
-from keyboard.dispt_key import admin_main_kb, order_cancel_kb, order_confirm_kb
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from keyboard.dispt_key import admin_main_kb, order_cancel_kb, order_confirm_kb
-from memory_db import add_order, get_all_orders, get_order_by_id, get_all_couriers, assign_courier
+from database.memory_db import add_order, get_all_orders, get_order_by_id, get_all_couriers, assign_courier
 
 dispet_router = Router()
 
@@ -85,8 +83,7 @@ async def process_price(message: Message, state: FSMContext):
 async def save_order_handler(message: Message, state: FSMContext):
     data = await state.get_data()
 
-    # СОХРАНЯЕМ В ПАМЯТЬ!
-    order_id = add_order(data)
+    order_id = await add_order(data)                 # ← await
 
     await state.clear()
     await message.answer(
@@ -102,16 +99,14 @@ async def cancel_confirmation(message: Message, state: FSMContext):
     await message.answer("Создание заказа отменено.", reply_markup=admin_main_kb())
 
 
-# --- КНОПКА "ВСЕ ЗАКАЗЫ" ---
 @dispet_router.message(F.text == "📊 Все заказы")
 async def show_all_orders(message: Message):
-    orders = get_all_orders()
+    orders = await get_all_orders()                  # ← await
 
     if not orders:
         return await message.answer("Пока нет созданных заказов.")
 
     for order in orders:
-        # Формируем текст для одного заказа
         text = (
             f"<b>Заказ #{order['id']}</b> ({order['status']})\n"
             f"📍 {order['address']}\n"
@@ -121,11 +116,8 @@ async def show_all_orders(message: Message):
 
         if order['courier_name']:
             text += f"🛵 Курьер: {order['courier_name']}"
-
-            # Если курьер уже назначен, кнопку не показываем
             await message.answer(text, parse_mode="HTML")
         else:
-            # Если курьера нет — показываем кнопку
             builder = InlineKeyboardBuilder()
             builder.button(
                 text="👤 Назначить курьера",
@@ -134,11 +126,10 @@ async def show_all_orders(message: Message):
             await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 
-# --- ВЫБОР КУРЬЕРА ДЛЯ ЗАКАЗА ---
 @dispet_router.callback_query(F.data.startswith("assign_menu:"))
 async def show_couriers_for_order(callback: CallbackQuery):
     order_id = int(callback.data.split(":")[1])
-    couriers = get_all_couriers()
+    couriers = await get_all_couriers()              # ← await
 
     builder = InlineKeyboardBuilder()
     for courier in couriers:
@@ -146,7 +137,7 @@ async def show_couriers_for_order(callback: CallbackQuery):
             text=courier["name"],
             callback_data=f"do_assign:{order_id}:{courier['id']}"
         )
-    builder.adjust(1)  # По одной кнопке в ряд
+    builder.adjust(1)
 
     await callback.message.edit_text(
         f"Выберите курьера для заказа <b>#{order_id}</b>:",
@@ -156,18 +147,16 @@ async def show_couriers_for_order(callback: CallbackQuery):
     await callback.answer()
 
 
-# --- САМО НАЗНАЧЕНИЕ ---
 @dispet_router.callback_query(F.data.startswith("do_assign:"))
 async def process_assignment(callback: CallbackQuery):
-    # Достаем ID заказа и ID курьера из callback_data
     _, order_id_str, courier_id_str = callback.data.split(":")
     order_id = int(order_id_str)
     courier_id = int(courier_id_str)
 
-    success = assign_courier(order_id, courier_id)
+    success = await assign_courier(order_id, courier_id)   # ← await
 
     if success:
-        order = get_order_by_id(order_id)
+        order = await get_order_by_id(order_id)             # ← await
         await callback.message.edit_text(
             f"✅ Заказ <b>#{order_id}</b> назначен на курьера <b>{order['courier_name']}</b>.",
             parse_mode="HTML"
