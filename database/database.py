@@ -51,7 +51,7 @@ class Order(Base):
     client_name: Mapped[str] = mapped_column(String(100))
     client_phone: Mapped[str] = mapped_column(String(30))
     price: Mapped[int]
-    status: Mapped[str] = mapped_column(String(50), default="🕒 Ожидает курьера")
+    status: Mapped[str] = mapped_column(String(50), default="Ожидает курьера")
 
     courier_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("couriers.id", ondelete="SET NULL"),

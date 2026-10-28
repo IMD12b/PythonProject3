@@ -50,7 +50,8 @@ async def add_order(order_data: dict) -> int:
 async def get_all_orders() -> list[dict]:
     async with async_session() as session:
         result = await session.execute(
-            select(Order).options(selectinload(Order.courier)).order_by(Order.id)
+            select(Order).options(selectinload(Order.courier)).
+            order_by(Order.id)
         )
         return [_order_to_dict(o) for o in result.scalars().all()]
 
@@ -142,7 +143,8 @@ async def assign_courier(order_id: int, courier_id: int) -> bool:
             return False
         if order.courier_id is not None:
             return False
-
+        if order.status != "🕒 Ожидает курьера":
+            return False
         order.courier_id = courier.id
         order.status = "🚚 В пути"
         courier.is_busy = True

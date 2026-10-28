@@ -116,14 +116,17 @@ async def show_all_orders(message: Message):
 
         if order['courier_name']:
             text += f"🛵 Курьер: {order['courier_name']}"
-            await message.answer(text, parse_mode="HTML")
-        else:
+
+        # Кнопку показываем ТОЛЬКО если заказ реально можно назначить
+        if order['status'] == "Ожидает курьера" and order['courier_name'] is None:
             builder = InlineKeyboardBuilder()
             builder.button(
                 text="👤 Назначить курьера",
                 callback_data=f"assign_menu:{order['id']}"
             )
             await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        else:
+            await message.answer(text, parse_mode="HTML")
 
 
 @dispet_router.callback_query(F.data.startswith("assign_menu:"))
