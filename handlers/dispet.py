@@ -118,7 +118,7 @@ async def show_all_orders(message: Message):
             text += f"🛵 Курьер: {order['courier_name']}"
 
         # Кнопку показываем ТОЛЬКО если заказ реально можно назначить
-        if order['status'] == "Ожидает курьера" and order['courier_name'] is None:
+        if order['status'] == "🕒 Ожидает курьера" and order['courier_name'] is None:
             builder = InlineKeyboardBuilder()
             builder.button(
                 text="👤 Назначить курьера",
