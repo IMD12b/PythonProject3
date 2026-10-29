@@ -1,16 +1,16 @@
 # handlers/moderator.py
-from aiogram import Router, F
+from aiogram import Router, F, Bot                  # ← добавили Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from memory_db import get_all_couriers, get_courier_by_id, update_courier_status
-from keyboard.courer_key import courier_main_kb  # <--- Импортируем клавиатуру курьера!
+from database.memory_db import get_all_couriers, get_courier_by_id, update_courier_status
+from keyboard.courer_key import courier_main_kb
 
 moderator_router = Router()
 
 
 @moderator_router.message(F.text == "👥 Заявки на модерацию")
 async def show_couriers_menu(message: Message):
-    couriers = get_all_couriers()
+    couriers = await get_all_couriers()              # ← await
     pending_couriers = [c for c in couriers if c["status"] == "pending"]
 
     if not pending_couriers:
@@ -26,22 +26,20 @@ async def show_couriers_menu(message: Message):
 
 
 @moderator_router.callback_query(F.data.startswith("mod_approve:"))
-async def approve_courier(callback: CallbackQuery, bot: Bot):  # <--- ДОБАВИЛИ bot!
+async def approve_courier(callback: CallbackQuery, bot: Bot):
     courier_id = int(callback.data.split(":")[1])
-    courier = get_courier_by_id(courier_id)
+    courier = await get_courier_by_id(courier_id)    # ← await
 
-    if update_courier_status(courier_id, "approved"):
+    if await update_courier_status(courier_id, "approved"):   # ← await
         await callback.message.edit_text(f"✅ Курьер {courier['name']} принят.")
 
-        # ОТПРАВЛЯЕМ УВЕДОМЛЕНИЕ КУРЬЕРУ!
         try:
             await bot.send_message(
                 chat_id=courier["telegram_id"],
                 text="🎉 Поздравляем! Твоя заявка одобрена. Теперь ты можешь брать заказы.",
-                reply_markup=courier_main_kb()  # Сразу даем ему кнопки курьера
+                reply_markup=courier_main_kb()
             )
         except Exception as e:
-            # Если курьер заблокировал бота, мы не сможем ему написать
             await callback.message.answer(f"⚠️ Не удалось уведомить курьера: {e}")
     await callback.answer()
 
@@ -49,9 +47,9 @@ async def approve_courier(callback: CallbackQuery, bot: Bot):  # <--- ДОБАВ
 @moderator_router.callback_query(F.data.startswith("mod_reject:"))
 async def reject_courier(callback: CallbackQuery, bot: Bot):
     courier_id = int(callback.data.split(":")[1])
-    courier = get_courier_by_id(courier_id)
+    courier = await get_courier_by_id(courier_id)    # ← await
 
-    if update_courier_status(courier_id, "rejected"):
+    if await update_courier_status(courier_id, "rejected"):   # ← await
         await callback.message.edit_text(f"❌ Курьер {courier['name']} отклонен.")
 
         try:

@@ -3,20 +3,20 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 
-
-# Импортируем настройки из конфига
 from config import BOT_TOKEN, PROXY_URL
 import logging
 from handlers.start import start_router
-from handlers.courer import courier_router
+from handlers.courier import courier_router
 from handlers.dispet import dispet_router
 from handlers.moderator import moderator_router
 
+from database.database import init_db          # ← ДОБАВИТЬ
+
 
 async def main():
-    # Настраиваем прокси (если PROXY_URL пустой или None, прокси не используется)
-    session = AiohttpSession(proxy=PROXY_URL) if PROXY_URL else None
+    await init_db()                    # ← ДОБАВИТЬ
 
+    session = AiohttpSession(proxy=PROXY_URL) if PROXY_URL else None
     bot = Bot(token=BOT_TOKEN, session=session)
     dp = Dispatcher()
 
@@ -26,7 +26,6 @@ async def main():
     )
     logger = logging.getLogger("bot")
 
-    # Подключаем роутеры
     dp.include_router(start_router)
     dp.include_router(courier_router)
     dp.include_router(dispet_router)

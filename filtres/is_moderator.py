@@ -1,5 +1,7 @@
+# filtres/is_moderator.py
 from aiogram.filters import Filter
 from aiogram.types import Message
+
 
 class IsModerator(Filter):
     def __init__(self, moderator_ids: list[int]):
