@@ -5,7 +5,6 @@ def admin_main_kb():
         keyboard=[
             [KeyboardButton(text="➕ Создать заказ")],
             [KeyboardButton(text="📊 Все заказы")],
-            [KeyboardButton(text="Назначить")],
             [KeyboardButton(text="👥 Список курьеров")]
         ],
         resize_keyboard=True

@@ -19,6 +19,26 @@ class OrderCreation(StatesGroup):
     confirming = State()
 
 
+@dispet_router.message(F.text == "👥 Список курьеров")
+async def show_all_couriers_for_admin(message: Message):
+    couriers = await get_all_couriers()
+
+    if not couriers:
+        return await message.answer("В базе пока нет ни одного курьера.")
+
+    text = "👥 <b>Все курьеры в системе:</b>\n\n"
+    for c in couriers:
+        busy = "🚚 Везет заказ" if c['is_busy'] else "☕ Свободен"
+        status = c['status']
+
+        text += (
+            f"👤 <b>{c['name']}</b> ({status})\n"
+            f"📞 {c['phone']}\n"
+            f"Статус: {busy}\n\n"
+        )
+
+    await message.answer(text, parse_mode="HTML")
+
 @dispet_router.message(F.text == "➕ Создать заказ")
 async def start_create_order(message: Message, state: FSMContext):
     await state.set_state(OrderCreation.waiting_address)

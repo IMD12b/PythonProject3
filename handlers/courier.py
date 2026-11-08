@@ -9,70 +9,12 @@ from database.memory_db import (
     assign_courier,
     get_orders_by_courier,
     complete_order,
+    is_courier_on_shift,get_courier_shifts
 )
 
 courier_router = Router()
 
 
-# =========================================================
-# ДОСТУПНЫЕ ЗАКАЗЫ
-# =========================================================
-
-@courier_router.message(F.text == "📋 Доступные заказы")
-async def show_orders(message: Message):
-    courier = await get_courier_by_tg_id(message.from_user.id)
-
-    if not courier:
-        return await message.answer("Ты не зарегистрирован как курьер.")
-    if courier["status"] != "approved":
-        return await message.answer("Ты пока не одобрен как курьер.")
-
-    orders = await get_available_orders()
-
-    if not orders:
-        return await message.answer("Свободных заказов нет.")
-
-    await message.answer("🔄 Загружаем доступные заказы...")
-
-    for order in orders:
-        builder = InlineKeyboardBuilder()
-        builder.button(
-            text="✅ Взять заказ",
-            callback_data=f"take_order:{order['id']}"
-        )
-        await message.answer(
-            f"📦 Заказ #{order['id']}\n"
-            f"📍 Адрес: {order['address']}\n"
-            f"💰 Сумма: {order['price']} ₽",
-            reply_markup=builder.as_markup()
-        )
-
-
-@courier_router.callback_query(F.data.startswith("take_order:"))
-async def process_take_order(callback: CallbackQuery):
-    order_id = int(callback.data.split(":")[1])
-
-    courier = await get_courier_by_tg_id(callback.from_user.id)
-
-    if not courier:
-        return await callback.answer("Ты не зарегистрирован как курьер.", show_alert=True)
-    if courier["status"] != "approved":
-        return await callback.answer("Ты не одобрен как курьер.", show_alert=True)
-
-    success = await assign_courier(order_id, courier["id"])
-
-    if success:
-        await callback.message.edit_text(
-            f"✅ Заказ #{order_id} закреплён за тобой.\n"
-            f"Статус: В пути 🚚",
-            reply_markup=None
-        )
-        await callback.answer("Заказ взят!")
-    else:
-        await callback.answer(
-            "Не удалось взять заказ: возможно, его уже взяли.",
-            show_alert=True
-        )
 
 
 # =========================================================
@@ -85,6 +27,9 @@ async def show_my_order(message: Message):
 
     if not courier:
         return await message.answer("Ты не зарегистрирован как курьер.")
+
+    if not await is_courier_on_shift(courier["id"]):
+        return await message.answer("⛔ Сейчас не твое время работы. Заказы недоступны. Проверь свои смены.")
 
     orders = await get_orders_by_courier(courier["id"])
     active = [o for o in orders if o["status"] == "🚚 В пути"]
@@ -132,3 +77,28 @@ async def process_complete_order(callback: CallbackQuery):
         await callback.answer("Готово!")
     else:
         await callback.answer("Не удалось завершить заказ.", show_alert=True)
+
+
+@courier_router.message(F.text == "🗓 Мои смены")
+async def show_my_shifts(message: Message):
+    courier = await get_courier_by_tg_id(message.from_user.id)
+    if not courier:
+        return await message.answer("Тебя нет в базе.")
+
+    # Берем список смен из новой таблицы
+    shifts = await get_courier_shifts(courier["id"])
+
+    if not shifts:
+        return await message.answer("У тебя пока нет назначенных смен. Обратись к модератору.")
+
+    text = "🗓 <b>Твой график смен:</b>\n\n"
+    for s in shifts:
+        text += f"• {s['start']} — {s['end']}\n"
+
+    # Проверяем, идет ли сейчас смена
+    if await is_courier_on_shift(courier["id"]):
+        text += "\n🟢 <b>Сейчас твоя смена активна.</b>"
+    else:
+        text += "\n🔴 <b>Сейчас не твое время работы.</b>"
+
+    await message.answer(text, parse_mode="HTML")

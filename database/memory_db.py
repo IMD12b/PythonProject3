@@ -1,8 +1,9 @@
 # memory_db.py
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from datetime import datetime
 
-from database.database import async_session, Courier, Order
+from database.database import async_session, Courier, Order, Shift, Dispatcher, DispatcherShift
 
 
 # ---------- ORM → dict ----------
@@ -214,3 +215,113 @@ async def get_free_approved_couriers() -> list[dict]:
             .order_by(Courier.id)
         )
         return [_courier_to_dict(c) for c in result.scalars().all()]
+
+
+async def add_shift(courier_id: int, start: str, end: str) -> bool:
+    """Добавляет новую смену курьеру"""
+    async with async_session() as session:
+        shift = Shift(courier_id=courier_id, start_time=start, end_time=end)
+        session.add(shift)
+        await session.commit()
+        return True
+
+
+async def get_courier_shifts(courier_id: int) -> list[dict]:
+    """Возвращает все смены конкретного курьера"""
+    async with async_session() as session:
+        result = await session.execute(
+            select(Shift)
+            .where(Shift.courier_id == courier_id)
+            .order_by(Shift.start_time)
+        )
+        return [
+            {"id": s.id, "start": s.start_time, "end": s.end_time}
+            for s in result.scalars().all()
+        ]
+
+
+async def is_courier_on_shift(courier_id: int) -> bool:
+    """Проверяет, есть ли у курьера АКТИВНАЯ смена прямо сейчас"""
+    shifts = await get_courier_shifts(courier_id)
+    now = datetime.now()
+
+    for shift in shifts:
+        try:
+            start_time = datetime.strptime(shift["start"], "%Y-%m-%d %H:%M")
+            end_time = datetime.strptime(shift["end"], "%Y-%m-%d %H:%M")
+            if start_time <= now <= end_time:
+                return True
+        except ValueError:
+            continue  # Если формат битый, пропускаем эту смену
+
+    return False
+
+# ==========================================
+# ФУНКЦИИ ДЛЯ ДИСПЕТЧЕРОВ
+# ==========================================
+
+def _dispatcher_to_dict(dispatcher: Dispatcher) -> dict:
+    return {
+        "id": dispatcher.id,
+        "telegram_id": dispatcher.telegram_id,
+        "name": dispatcher.name,
+        "phone": dispatcher.phone,
+        "status": dispatcher.status,
+    }
+
+async def get_all_dispatchers() -> list[dict]:
+    async with async_session() as session:
+        result = await session.execute(select(Dispatcher).order_by(Dispatcher.id))
+        return [_dispatcher_to_dict(d) for d in result.scalars().all()]
+
+async def get_dispatcher_by_id(dispatcher_id: int) -> dict | None:
+    async with async_session() as session:
+        result = await session.execute(select(Dispatcher).where(Dispatcher.id == dispatcher_id))
+        dispatcher = result.scalar_one_or_none()
+        return _dispatcher_to_dict(dispatcher) if dispatcher else None
+
+async def get_dispatcher_by_tg_id(tg_id: int) -> dict | None:
+    async with async_session() as session:
+        result = await session.execute(select(Dispatcher).where(Dispatcher.telegram_id == tg_id))
+        dispatcher = result.scalar_one_or_none()
+        return _dispatcher_to_dict(dispatcher) if dispatcher else None
+
+async def register_dispatcher(tg_id: int, name: str, phone: str) -> int:
+    async with async_session() as session:
+        dispatcher = Dispatcher(telegram_id=tg_id, name=name, phone=phone, status="pending")
+        session.add(dispatcher)
+        await session.commit()
+        await session.refresh(dispatcher)
+        return dispatcher.id
+
+async def update_dispatcher_status(dispatcher_id: int, new_status: str) -> bool:
+    async with async_session() as session:
+        result = await session.execute(select(Dispatcher).where(Dispatcher.id == dispatcher_id))
+        dispatcher = result.scalar_one_or_none()
+        if not dispatcher: return False
+        dispatcher.status = new_status
+        await session.commit()
+        return True
+
+async def add_dispatcher_shift(dispatcher_id: int, start: str, end: str) -> bool:
+    async with async_session() as session:
+        shift = DispatcherShift(dispatcher_id=dispatcher_id, start_time=start, end_time=end)
+        session.add(shift)
+        await session.commit()
+        return True
+
+async def get_dispatcher_shifts(dispatcher_id: int) -> list[dict]:
+    async with async_session() as session:
+        result = await session.execute(select(DispatcherShift).where(DispatcherShift.dispatcher_id == dispatcher_id).order_by(DispatcherShift.start_time))
+        return [{"id": s.id, "start": s.start_time, "end": s.end_time} for s in result.scalars().all()]
+
+async def is_dispatcher_on_shift(dispatcher_id: int) -> bool:
+    shifts = await get_dispatcher_shifts(dispatcher_id)
+    now = datetime.now()
+    for shift in shifts:
+        try:
+            start_time = datetime.strptime(shift["start"], "%Y-%m-%d %H:%M")
+            end_time = datetime.strptime(shift["end"], "%Y-%m-%d %H:%M")
+            if start_time <= now <= end_time: return True
+        except ValueError: continue
+    return False
