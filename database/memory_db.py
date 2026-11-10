@@ -28,6 +28,7 @@ def _courier_to_dict(courier: Courier) -> dict:
         "phone": courier.phone,
         "status": courier.status,
         "is_busy": courier.is_busy,
+        "is_on_shift": courier.is_on_shift,
     }
 
 
@@ -69,6 +70,15 @@ async def get_order_by_id(order_id: int) -> dict | None:
 
 
 # ---------- КУРЬЕРЫ (исходные) ----------
+async def toggle_courier_shift_status(courier_id: int, status: bool) -> bool:
+    async with async_session() as session:
+        result = await session.execute(select(Courier).where(Courier.id == courier_id))
+        courier = result.scalar_one_or_none()
+        if courier:
+            courier.is_on_shift = status
+            await session.commit()
+            return True
+    return False
 
 async def get_all_couriers() -> list[dict]:
     async with async_session() as session:
@@ -267,7 +277,18 @@ def _dispatcher_to_dict(dispatcher: Dispatcher) -> dict:
         "name": dispatcher.name,
         "phone": dispatcher.phone,
         "status": dispatcher.status,
+        "is_on_shift": dispatcher.is_on_shift,
     }
+
+async def toggle_dispatcher_shift_status(dispatcher_id: int, status: bool) -> bool:
+    async with async_session() as session:
+        result = await session.execute(select(Dispatcher).where(Dispatcher.id == dispatcher_id))
+        disp = result.scalar_one_or_none()
+        if disp:
+            disp.is_on_shift = status
+            await session.commit()
+            return True
+    return False
 
 async def get_all_dispatchers() -> list[dict]:
     async with async_session() as session:
@@ -325,3 +346,23 @@ async def is_dispatcher_on_shift(dispatcher_id: int) -> bool:
             if start_time <= now <= end_time: return True
         except ValueError: continue
     return False
+
+
+
+
+# 2. Отмена заказа (курьером или диспетчером)
+async def cancel_order(order_id: int, reason: str = "Отменен") -> bool:
+    async with async_session() as session:
+        result = await session.execute(select(Order).options(selectinload(Order.courier)).where(Order.id == order_id))
+        order = result.scalar_one_or_none()
+
+        if not order:
+            return False
+
+        if order.courier is not None:
+            order.courier.is_busy = False  # Освобождаем курьера, если он был назначен
+
+        order.status = f"❌ Отменен ({reason})"
+        order.courier_id = None  # Отвязываем курьера
+        await session.commit()
+        return True

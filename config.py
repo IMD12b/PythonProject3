@@ -17,6 +17,9 @@ MODERATOR_IDS = [int(x.strip()) for x in _mod_ids_str.split(",") if x.strip()]
 _admin_ids_str = os.getenv("ADMIN_IDS", "")
 ADMIN_IDS = [int(x.strip()) for x in _admin_ids_str.split(",") if x.strip()]
 
+_cou_ids_str = os.getenv("COURIER_IDS", "")
+COURIER_IDS = [int(x.strip()) for x in _cou_ids_str.split(",") if x.strip()]
+
 # ← ДОБАВИТЬ проверку
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL не задан в .env")

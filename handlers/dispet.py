@@ -1,12 +1,15 @@
 # handlers/dispet.py
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from keyboard.courer_key import courier_main_kb
 from keyboard.dispt_key import admin_main_kb, order_cancel_kb, order_confirm_kb
-from database.memory_db import add_order, get_all_orders, get_order_by_id, get_all_couriers, assign_courier
+from database.memory_db import add_order, get_all_orders, get_order_by_id, get_all_couriers, assign_courier, \
+    get_courier_by_id, get_dispatcher_by_tg_id, get_dispatcher_shifts, is_dispatcher_on_shift, \
+    toggle_dispatcher_shift_status
 
 dispet_router = Router()
 
@@ -18,6 +21,43 @@ class OrderCreation(StatesGroup):
     waiting_price = State()
     confirming = State()
 
+
+@dispet_router.message(F.text == "⏱ Начать/Закончить смену")
+async def toggle_disp_shift(message: Message):
+    disp = await get_dispatcher_by_tg_id(message.from_user.id)
+    if not disp: return await message.answer("Тебя нет в базе.")
+
+    if not disp["is_on_shift"]:
+        if not await is_dispatcher_on_shift(disp["id"]):
+            return await message.answer("⛔ Сейчас не твое время по графику.")
+        await toggle_dispatcher_shift_status(disp["id"], True)
+        await message.answer("🟢 Смена начата!")
+    else:
+        await toggle_dispatcher_shift_status(disp["id"], False)
+        await message.answer("🔴 Смена завершена.")
+
+
+@dispet_router.message(F.text == "🗓 Мои смены")
+async def show_my_dispatcher_shifts(message: Message):
+    disp = await get_dispatcher_by_tg_id(message.from_user.id)
+    if not disp:
+        return await message.answer("Тебя нет в базе диспетчеров.")
+
+    shifts = await get_dispatcher_shifts(disp["id"])
+
+    if not shifts:
+        return await message.answer("У тебя пока нет назначенных смен. Обратись к модератору.")
+
+    text = "🗓 <b>Твой график смен:</b>\n\n"
+    for s in shifts:
+        text += f"• {s['start']} — {s['end']}\n"
+
+    if await is_dispatcher_on_shift(disp["id"]):
+        text += "\n🟢 <b>Сейчас твоя смена активна.</b>"
+    else:
+        text += "\n🔴 <b>Сейчас не твое время работы.</b>"
+
+    await message.answer(text, parse_mode="HTML")
 
 @dispet_router.message(F.text == "👥 Список курьеров")
 async def show_all_couriers_for_admin(message: Message):
@@ -171,7 +211,7 @@ async def show_couriers_for_order(callback: CallbackQuery):
 
 
 @dispet_router.callback_query(F.data.startswith("do_assign:"))
-async def process_assignment(callback: CallbackQuery):
+async def process_assignment(callback: CallbackQuery, bot: Bot):
     _, order_id_str, courier_id_str = callback.data.split(":")
     order_id = int(order_id_str)
     courier_id = int(courier_id_str)
@@ -179,11 +219,22 @@ async def process_assignment(callback: CallbackQuery):
     success = await assign_courier(order_id, courier_id)   # ← await
 
     if success:
-        order = await get_order_by_id(order_id)             # ← await
+        order = await get_order_by_id(order_id)
+        courier_id = int(callback.data.split(":")[1])
+        courier = await get_courier_by_id(courier_id)
+        # ← await
         await callback.message.edit_text(
             f"✅ Заказ <b>#{order_id}</b> назначен на курьера <b>{order['courier_name']}</b>.",
             parse_mode="HTML"
         )
         await callback.answer("Курьер назначен!")
+        try:
+            await bot.send_message(
+                chat_id=courier["telegram_id"],
+                text="Тебе назначен новый заказ!",
+                reply_markup=courier_main_kb()
+            )
+        except Exception as e:
+            await callback.message.answer(f"⚠️ Не удалось уведомить курьера о заказе: {e}")
     else:
         await callback.answer("Ошибка при назначении", show_alert=True)

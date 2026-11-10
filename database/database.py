@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, String,BigInteger
 from typing import Optional
 
 from config import DATABASE_URL
@@ -47,12 +47,12 @@ class Courier(Base):
     __tablename__ = "couriers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    telegram_id: Mapped[int] = mapped_column(unique=True, index=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger,unique=True, index=True)
     name: Mapped[str] = mapped_column(String(100))
     phone: Mapped[str] = mapped_column(String(30))
     status: Mapped[str] = mapped_column(String(20), default="pending")
     is_busy: Mapped[bool] = mapped_column(default=False)
-
+    is_on_shift: Mapped[bool] = mapped_column(default=False)
     orders: Mapped[list["Order"]] = relationship(back_populates="courier")
 
     shifts: Mapped[list["Shift"]] = relationship(back_populates="courier", cascade="all, delete-orphan")
@@ -67,6 +67,7 @@ class Order(Base):
     client_phone: Mapped[str] = mapped_column(String(30))
     price: Mapped[int]
     status: Mapped[str] = mapped_column(String(50), default="Ожидает курьера")
+    cancel_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     courier_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("couriers.id", ondelete="SET NULL"),
@@ -78,11 +79,11 @@ class Dispatcher(Base):
     __tablename__ = "dispatchers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    telegram_id: Mapped[int] = mapped_column(unique=True, index=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger,unique=True, index=True)
     name: Mapped[str] = mapped_column(String(100))
     phone: Mapped[str] = mapped_column(String(30))
     status: Mapped[str] = mapped_column(String(20), default="pending") # pending / approved / rejected
-
+    is_on_shift: Mapped[bool] = mapped_column(default=False)
     shifts: Mapped[list["DispatcherShift"]] = relationship(back_populates="dispatcher", cascade="all, delete-orphan")
 
 class DispatcherShift(Base):
@@ -92,7 +93,6 @@ class DispatcherShift(Base):
     dispatcher_id: Mapped[int] = mapped_column(ForeignKey("dispatchers.id", ondelete="CASCADE"))
     start_time: Mapped[str] = mapped_column(String(30))
     end_time: Mapped[str] = mapped_column(String(30))
-
     dispatcher: Mapped["Dispatcher"] = relationship(back_populates="shifts")
 
 

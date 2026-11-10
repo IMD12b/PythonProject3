@@ -8,8 +8,7 @@ from database.memory_db import (
     get_courier_by_tg_id,
     assign_courier,
     get_orders_by_courier,
-    complete_order,
-    is_courier_on_shift,get_courier_shifts
+    is_courier_on_shift, get_courier_shifts, complete_order, cancel_order, get_order_by_id, toggle_courier_shift_status
 )
 
 courier_router = Router()
@@ -28,30 +27,60 @@ async def show_my_order(message: Message):
     if not courier:
         return await message.answer("Ты не зарегистрирован как курьер.")
 
-    if not await is_courier_on_shift(courier["id"]):
-        return await message.answer("⛔ Сейчас не твое время работы. Заказы недоступны. Проверь свои смены.")
+    if not courier["is_on_shift"]:
+        return await message.answer("⛔ Ты не на смене.")
 
     orders = await get_orders_by_courier(courier["id"])
-    active = [o for o in orders if o["status"] == "🚚 В пути"]
+    active_order = next((o for o in orders if o["status"] == "🚚 В пути"), None)
 
-    if not active:
+    if not active_order:
         return await message.answer("У тебя нет активных заказов.")
 
-    for order in active:
-        builder = InlineKeyboardBuilder()
-        builder.button(
-            text="✅ Завершить",
-            callback_data=f"complete_order:{order['id']}"
-        )
-        await message.answer(
-            f"📦 Заказ #{order['id']}\n"
-            f"📍 Адрес: {order['address']}\n"
-            f"👤 Клиент: {order['client_name']}\n"
-            f"📞 Телефон: {order['client_phone']}\n"
-            f"💰 Сумма: {order['price']} ₽",
-            reply_markup=builder.as_markup()
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Доставлено", callback_data=f"deliver_order:{active_order['id']}")
+    builder.button(text="❌ Отказаться", callback_data=f"courier_cancel:{active_order['id']}")
+    builder.adjust(2)
+
+    phone_link = f'<a href="tel:{active_order["client_phone"]}">📞 Позвонить: {active_order["client_phone"]}</a>'
+
+    await message.answer(
+        f"🚚 <b>Твой текущий заказ #{active_order['id']}</b>\n\n"
+        f"📍 {active_order['address']}\n"
+        f"👤 {active_order['client_name']}\n"
+        f"{phone_link}",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
         )
 
+
+@courier_router.callback_query(F.data.startswith("take_order:"))
+async def process_take_order(callback: CallbackQuery):
+    order_id = int(callback.data.split(":")[1])
+    courier = await get_courier_by_tg_id(callback.from_user.id)
+
+    if await assign_courier(order_id, courier["id"]):
+        # После взятия показываем карточку с кнопками управления
+        order = await get_order_by_id(order_id)  # Нужно импортировать эту функцию!
+
+        builder = InlineKeyboardBuilder()
+        builder.button(text="✅ Доставлено", callback_data=f"deliver_order:{order_id}")
+        builder.button(text="❌ Отказаться", callback_data=f"courier_cancel:{order_id}")
+        builder.adjust(2)
+
+        # Ссылка для звонка
+        phone_link = f'<a href="tel:{order["client_phone"]}">📞 Позвонить: {order["client_phone"]}</a>'
+
+        await callback.message.edit_text(
+            f"✅ Заказ #{order_id} закреплен за тобой.\n\n"
+            f"📍 {order['address']}\n"
+            f"👤 {order['client_name']}\n"
+            f"{phone_link}\n\n"
+            f"Когда доставишь - нажми кнопку.",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+    else:
+        await callback.answer("Не удалось взять заказ.", show_alert=True)
 
 @courier_router.callback_query(F.data.startswith("complete_order:"))
 async def process_complete_order(callback: CallbackQuery):
@@ -79,6 +108,15 @@ async def process_complete_order(callback: CallbackQuery):
         await callback.answer("Не удалось завершить заказ.", show_alert=True)
 
 
+@courier_router.callback_query(F.data.startswith("courier_cancel:"))
+async def process_courier_cancel(callback: CallbackQuery):
+    order_id = int(callback.data.split(":")[1])
+
+    if await cancel_order(order_id, reason="Отказ курьера"):
+        await callback.message.edit_text(f"Заказ #{order_id} отменен и возвращен в пул.")
+        await callback.answer("Ты отказался от заказа")
+
+
 @courier_router.message(F.text == "🗓 Мои смены")
 async def show_my_shifts(message: Message):
     courier = await get_courier_by_tg_id(message.from_user.id)
@@ -102,3 +140,18 @@ async def show_my_shifts(message: Message):
         text += "\n🔴 <b>Сейчас не твое время работы.</b>"
 
     await message.answer(text, parse_mode="HTML")
+
+
+@courier_router.message(F.text == "⏱ Начать/Закончить смену")
+async def toggle_shift(message: Message):
+    courier = await get_courier_by_tg_id(message.from_user.id)
+    if not courier: return await message.answer("Тебя нет в базе.")
+
+    if not courier["is_on_shift"]:
+        if not await is_courier_on_shift(courier["id"]):
+            return await message.answer("⛔ Сейчас не твое время по графику.")
+        await toggle_courier_shift_status(courier["id"], True)
+        await message.answer("🟢 Смена начата!")
+    else:
+        await toggle_courier_shift_status(courier["id"], False)
+        await message.answer("🔴 Смена завершена.")
