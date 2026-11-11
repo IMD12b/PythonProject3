@@ -16,9 +16,13 @@ async def show_couriers_list(message: Message):
     couriers = await get_all_couriers()
     if not couriers:
         return await message.answer("В базе нет курьеров.")
+    active_couriers = [c for c in couriers if c["status"] != "rejected"]
+
+    if not active_couriers:
+        return await message.answer("В базе нет активных курьеров.")
 
     builder = InlineKeyboardBuilder()
-    for c in couriers:
+    for c in active_couriers:
         builder.button(text=c["name"], callback_data=f"manage_courier:{c['id']}")
     builder.adjust(1)
     await message.answer("Выбери курьера для управления:", reply_markup=builder.as_markup())

@@ -16,7 +16,10 @@ async def show_dispatchers_list(message: Message):
     dispatchers = await get_all_dispatchers()
     if not dispatchers:
         return await message.answer("В базе нет диспетчеров.")
+    active_dispatchers = [c for c in dispatchers if c["status"] != "rejected"]
 
+    if not active_dispatchers:
+        return await message.answer("В базе нет активных диспетчеров.")
     builder = InlineKeyboardBuilder()
     for d in dispatchers:
         builder.button(text=d["name"], callback_data=f"manage_dispatcher:{d['id']}")
