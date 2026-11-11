@@ -12,7 +12,7 @@ from keyboard.dispt_key import admin_main_kb
 from keyboard.moderator_key import moderator_main_kb
 from filtres.dispt_id import IsAdmin
 from config import ADMIN_IDS, MODERATOR_IDS,COURIER_IDS
-from database.memory_db import (
+from db.memory_db import (
     get_courier_by_tg_id, register_courier,
     get_dispatcher_by_tg_id, register_dispatcher
 )
@@ -47,7 +47,7 @@ async def cmd_start_courier(message: Message):
             phone="+70000000000"
         )
         # И сразу одобряем его (чтобы не ждать модератора)
-        from database.memory_db import update_courier_status
+        from db.memory_db import update_courier_status
         new_courier = await get_courier_by_tg_id(message.from_user.id)
         await update_courier_status(new_courier["id"], "approved")
     await message.answer("Ты вошел как курьер.", reply_markup=courier_main_kb())
