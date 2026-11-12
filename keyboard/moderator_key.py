@@ -6,7 +6,8 @@ def moderator_main_kb():
             [KeyboardButton(text="👥 Заявки курьеров")],
             [KeyboardButton(text="💼 Заявки диспетчеров")],
             [KeyboardButton(text="📋 Список курьеров")],
-            [KeyboardButton(text="💼 список диспетчеров")]
+            [KeyboardButton(text="💼 список диспетчеров")],
+            [KeyboardButton(text="📈 Статистика")]
         ],
         resize_keyboard=True
     )

@@ -5,8 +5,9 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import ForeignKey, String,BigInteger
+from sqlalchemy import ForeignKey, String,BigInteger,DateTime
 from typing import Optional
+from datetime import datetime
 
 from config import DATABASE_URL
 
@@ -41,6 +42,7 @@ class Shift(Base):
     start_time: Mapped[str] = mapped_column(String(30))
     end_time: Mapped[str] = mapped_column(String(30))
 
+
     courier: Mapped["Courier"] = relationship(back_populates="shifts")
 
 class Courier(Base):
@@ -54,6 +56,8 @@ class Courier(Base):
     is_busy: Mapped[bool] = mapped_column(default=False)
     is_on_shift: Mapped[bool] = mapped_column(default=False)
     orders: Mapped[list["Order"]] = relationship(back_populates="courier")
+    shift_logs: Mapped[list["CourierShiftLog"]] = relationship(back_populates="courier", cascade="all, delete-orphan")
+
 
     shifts: Mapped[list["Shift"]] = relationship(back_populates="courier", cascade="all, delete-orphan")
 
@@ -68,6 +72,8 @@ class Order(Base):
     price: Mapped[int]
     status: Mapped[str] = mapped_column(String(50), default="Ожидает курьера")
     cancel_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
 
     courier_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("couriers.id", ondelete="SET NULL"),
@@ -85,6 +91,8 @@ class Dispatcher(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending") # pending / approved / rejected
     is_on_shift: Mapped[bool] = mapped_column(default=False)
     shifts: Mapped[list["DispatcherShift"]] = relationship(back_populates="dispatcher", cascade="all, delete-orphan")
+    shift_logs: Mapped[list["DispatcherShiftLog"]] = relationship(back_populates="dispatcher",
+                                                                  cascade="all, delete-orphan")
 
 class DispatcherShift(Base):
     __tablename__ = "dispatcher_shifts"
@@ -95,6 +103,22 @@ class DispatcherShift(Base):
     end_time: Mapped[str] = mapped_column(String(30))
     dispatcher: Mapped["Dispatcher"] = relationship(back_populates="shifts")
 
+
+class CourierShiftLog(Base):
+    __tablename__ = "courier_shift_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    courier_id: Mapped[int] = mapped_column(ForeignKey("couriers.id", ondelete="CASCADE"))
+    clock_in: Mapped[datetime] = mapped_column(DateTime, default=datetime.now) # Время начала
+    clock_out: Mapped[datetime | None] = mapped_column(DateTime, nullable=True) # Время конца
+    courier: Mapped["Courier"] = relationship(back_populates="shift_logs")
+
+class DispatcherShiftLog(Base):
+    __tablename__ = "dispatcher_shift_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    dispatcher_id: Mapped[int] = mapped_column(ForeignKey("dispatchers.id", ondelete="CASCADE"))
+    clock_in: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    clock_out: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    dispatcher: Mapped["Dispatcher"] = relationship(back_populates="shift_logs")
 
 async def init_db() -> None:
     """Создаёт таблицы, если их нет. Вызвать один раз при старте."""

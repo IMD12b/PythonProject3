@@ -29,14 +29,16 @@ async def show_my_order(message: Message):
     builder.button(text="✅ Доставлено", callback_data=f"complete_order:{active_order['id']}")   # ← исправлено
     builder.button(text="❌ Отказаться", callback_data=f"courier_cancel:{active_order['id']}")
     builder.adjust(2)
+    clean_phone = "".join(c for c in active_order["client_phone"] if c.isdigit() or c == "+")
 
-    phone_link = f'<a href="tel:{active_order["client_phone"]}">📞 Позвонить: {active_order["client_phone"]}</a>'
+    # Создаем ссылку
+    phone_text = f'📞 Клиент: <code>{active_order["client_phone"]}</code>'
 
     await message.answer(
         f"🚚 <b>Твой текущий заказ #{active_order['id']}</b>\n\n"
         f"📍 {active_order['address']}\n"
         f"👤 {active_order['client_name']}\n"
-        f"{phone_link}",
+        f"{phone_text}",
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )

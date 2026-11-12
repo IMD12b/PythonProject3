@@ -17,6 +17,7 @@ from handlers.moderator import (
     mod_couriers_router,
     mod_dispatchers_router,
     mod_shifts_router,
+    mod_stats_router,
 )
 
 from db.database import init_db          # ← ДОБАВИТЬ
@@ -45,6 +46,7 @@ async def main():
     dp.include_router(mod_couriers_router)
     dp.include_router(mod_dispatchers_router)
     dp.include_router(mod_shifts_router)
+    dp.include_router(mod_stats_router)
 
     print("Бот запущен!")
     await dp.start_polling(bot)
