@@ -5,6 +5,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from db.couriers import get_free_approved_couriers
+from db.dispatchers import get_dispatcher_by_tg_id
 from keyboard.dispt_key import admin_main_kb, order_cancel_kb, order_confirm_kb
 from keyboard.courer_key import courier_main_kb
 from db.memory_db import (
@@ -23,6 +24,13 @@ class OrderCreation(StatesGroup):
 
 @dispatcher_orders_router.message(F.text == "➕ Создать заказ")
 async def start_create_order(message: Message, state: FSMContext):
+    disp = await get_dispatcher_by_tg_id(message.from_user.id)
+    if not disp:
+        return await message.answer("Тебя нет в базе.")
+
+    if not disp["is_on_shift"]:
+        return await message.answer("⛔ Ты не на смене! Нажми «Начать/Закончить смену», чтобы начать работу.")
+
     await state.set_state(OrderCreation.waiting_address)
     await message.answer("Введите <b>адрес доставки</b>:", reply_markup=order_cancel_kb(), parse_mode="HTML")
 
@@ -84,8 +92,8 @@ async def process_price(message: Message, state: FSMContext):
 @dispatcher_orders_router.message(OrderCreation.confirming, F.text == "✅ Сохранить")
 async def save_order_handler(message: Message, state: FSMContext):
     data = await state.get_data()
-
-    order_id = await add_order(data)                 # ← await
+    disp = await get_dispatcher_by_tg_id(message.from_user.id)
+    order_id = await add_order(data, disp["id"])                 # ← await
 
     await state.clear()
     await message.answer(
@@ -104,6 +112,12 @@ async def cancel_confirmation(message: Message, state: FSMContext):
 @dispatcher_orders_router.message(F.text == "📊 Все заказы")
 async def show_all_orders(message: Message):
     orders = await get_all_orders()                  # ← await
+    disp = await get_dispatcher_by_tg_id(message.from_user.id)
+    if not disp:
+        return await message.answer("Тебя нет в базе.")
+
+    if not disp["is_on_shift"]:
+        return await message.answer("⛔ Ты не на смене! Нажми «Начать/Закончить смену», чтобы начать работу.")
 
     if not orders:
         return await message.answer("Пока нет созданных заказов.")

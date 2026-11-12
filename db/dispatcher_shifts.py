@@ -2,7 +2,7 @@
 from datetime import datetime
 from sqlalchemy import select
 
-from db.database import async_session, DispatcherShift
+from db.database import async_session, DispatcherShift, DispatcherShiftLog
 
 
 async def add_dispatcher_shift(dispatcher_id: int, start: str, end: str) -> bool:
@@ -35,3 +35,22 @@ async def is_dispatcher_on_shift(dispatcher_id: int) -> bool:
         except ValueError:
             continue
     return False
+
+async def start_dispatcher_shift_log(dispatcher_id: int):
+    async with async_session() as session:
+        log = DispatcherShiftLog(dispatcher_id=dispatcher_id, clock_in=datetime.now())
+        session.add(log)
+        await session.commit()
+
+async def end_dispatcher_shift_log(dispatcher_id: int):
+    async with async_session() as session:
+        result = await session.execute(
+            select(DispatcherShiftLog)
+            .where(DispatcherShiftLog.dispatcher_id == dispatcher_id)
+            .where(DispatcherShiftLog.clock_out.is_(None))
+            .order_by(DispatcherShiftLog.clock_in.desc())
+        )
+        log = result.scalars().first()
+        if log:
+            log.clock_out = datetime.now()
+            await session.commit()

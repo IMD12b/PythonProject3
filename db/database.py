@@ -55,7 +55,10 @@ class Courier(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")
     is_busy: Mapped[bool] = mapped_column(default=False)
     is_on_shift: Mapped[bool] = mapped_column(default=False)
-    orders: Mapped[list["Order"]] = relationship(back_populates="courier")
+    orders: Mapped[list["Order"]] = relationship(
+        back_populates="courier",
+        foreign_keys="Order.courier_id"  # <--- Указываем тот же ключ
+    )
     shift_logs: Mapped[list["CourierShiftLog"]] = relationship(back_populates="courier", cascade="all, delete-orphan")
 
 
@@ -73,13 +76,20 @@ class Order(Base):
     status: Mapped[str] = mapped_column(String(50), default="Ожидает курьера")
     cancel_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    delivered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("couriers.id", ondelete="SET NULL"),
+                                                           nullable=True)
 
+    created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("dispatchers.id", ondelete="SET NULL"),
+                                                         nullable=True)
 
     courier_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("couriers.id", ondelete="SET NULL"),
         nullable=True,
     )
-    courier: Mapped[Optional["Courier"]] = relationship(back_populates="orders")
+    courier: Mapped[Optional["Courier"]] = relationship(
+        back_populates="orders",
+        foreign_keys=[courier_id]
+    )
 
 class Dispatcher(Base):
     __tablename__ = "dispatchers"

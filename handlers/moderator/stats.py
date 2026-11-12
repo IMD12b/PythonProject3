@@ -77,14 +77,20 @@ async def stats_show_result(callback: CallbackQuery, state: FSMContext):
         for s in stats:
             text += f"👤 <b>{s['name']}</b>\n⏱ Часов: {s['hours']} | 📦 Заказов: {s['orders']}\n\n"
 
+
     elif category == "dispatchers":
+
         stats = await get_dispatchers_stats_for_period(date_from, now)
+
         text = f"💼 <b>Статистика диспетчеров ({period_text})</b>\n\n"
+
         if not stats:
             text += "Нет данных."
-        for s in stats:
-            text += f"👤 <b>{s['name']}</b>\n⏱ Часов: {s['hours']}\n\n"
 
+        for s in stats:
+            # Добавили вывод заказов (s['orders'])
+
+            text += f"👤 <b>{s['name']}</b>\n⏱ Часов: {s['hours']} | 📦 Создано заказов: {s['orders']}\n\n"
     elif category == "orders":
         stats = await get_orders_stats_for_period(date_from, now)
         text = (

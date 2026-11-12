@@ -29,7 +29,7 @@ async def get_couriers_stats_for_period(date_from: datetime, date_to: datetime) 
             # Считаем заказы
             orders_res = await session.execute(
                 select(Order).where(
-                    Order.courier_id == c.id,
+                    Order.delivered_by_id == c.id,
                     Order.status == "✅ Доставлен",
                     Order.created_at >= date_from,
                     Order.created_at <= date_to
@@ -53,6 +53,7 @@ async def get_dispatchers_stats_for_period(date_from: datetime, date_to: datetim
 
         result = []
         for d in dispatchers:
+            # 1. Считаем часы
             logs_res = await session.execute(
                 select(DispatcherShiftLog).where(
                     DispatcherShiftLog.dispatcher_id == d.id,
@@ -66,9 +67,20 @@ async def get_dispatchers_stats_for_period(date_from: datetime, date_to: datetim
                 end = log.clock_out if log.clock_out else datetime.now()
                 total_hours += (end - log.clock_in).total_seconds() / 3600
 
+            # 2. Считаем созданные заказы
+            orders_res = await session.execute(
+                select(Order).where(
+                    Order.created_by_id == d.id,  # <--- Ищем по новому полю!
+                    Order.created_at >= date_from,
+                    Order.created_at <= date_to
+                )
+            )
+            created_orders_count = len(orders_res.scalars().all())
+
             result.append({
                 "name": d.name,
-                "hours": round(total_hours, 1)
+                "hours": total_hours,
+                "orders": created_orders_count  # <--- Добавили в статистику
             })
         return result
 

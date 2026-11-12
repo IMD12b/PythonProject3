@@ -6,7 +6,7 @@ from db.database import async_session, Courier, Order
 from db.converters import order_to_dict
 
 
-async def add_order(order_data: dict) -> int:
+async def add_order(order_data: dict, dispatcher_id: int) -> int:
     async with async_session() as session:
         order = Order(
             address=order_data["address"],
@@ -14,6 +14,7 @@ async def add_order(order_data: dict) -> int:
             client_phone=order_data["client_phone"],
             price=order_data["price"],
             status="🕒 Ожидает курьера",
+            created_by_id=dispatcher_id
         )
         session.add(order)
         await session.commit()
@@ -99,6 +100,7 @@ async def complete_order(order_id: int) -> bool:
         if order.courier is not None:
             order.courier.is_busy = False
         order.status = "✅ Доставлен"
+        order.delivered_by_id = order.courier_id
         order.courier_id = None
         await session.commit()
         return True

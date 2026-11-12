@@ -20,8 +20,16 @@ async def get_dispatcher_by_id(dispatcher_id: int) -> dict | None:
 
 async def get_dispatcher_by_tg_id(tg_id: int) -> dict | None:
     async with async_session() as session:
+        print(f"--- DEBUG: Ищу диспетчера с ID: {tg_id}")  # <--- Отладка
+
         result = await session.execute(select(Dispatcher).where(Dispatcher.telegram_id == tg_id))
         dispatcher = result.scalar_one_or_none()
+
+        if dispatcher:
+            print(f"--- DEBUG: Найден! {dispatcher.name}")  # <--- Отладка
+        else:
+            print("--- DEBUG: НЕ НАЙДЕН!")  # <--- Отладка
+
         return dispatcher_to_dict(dispatcher) if dispatcher else None
 
 

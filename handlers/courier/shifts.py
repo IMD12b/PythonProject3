@@ -1,6 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import Message
 
+from db.courier_shift import start_courier_shift_log, end_courier_shift_log
 from db.memory_db import (
     get_courier_by_tg_id, get_courier_shifts,
     is_courier_on_shift, toggle_courier_shift_status,
@@ -41,7 +42,9 @@ async def toggle_shift(message: Message):
         if not await is_courier_on_shift(courier["id"]):
             return await message.answer("⛔ Сейчас не твое время по графику.")
         await toggle_courier_shift_status(courier["id"], True)
+        await start_courier_shift_log(courier["id"])
         await message.answer("🟢 Смена начата!")
     else:
         await toggle_courier_shift_status(courier["id"], False)
+        await end_courier_shift_log(courier["id"])
         await message.answer("🔴 Смена завершена.")

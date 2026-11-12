@@ -22,6 +22,11 @@ async def get_courier_by_tg_id(tg_id: int) -> dict | None:
     async with async_session() as session:
         result = await session.execute(select(Courier).where(Courier.telegram_id == tg_id))
         courier = result.scalar_one_or_none()
+        if courier:
+            print(f"--- DEBUG: НайдеХуйн! {courier.name}")  # <--- Отладка
+        else:
+            print("--- DEBUG: НЕ НАЙДЕХуйН!")  # <--- Отладка
+
         return courier_to_dict(courier) if courier else None
 
 

@@ -2,7 +2,7 @@
 from datetime import datetime
 from sqlalchemy import select
 
-from db.database import async_session, Shift
+from db.database import async_session, Shift, CourierShiftLog
 
 
 async def add_shift(courier_id: int, start: str, end: str) -> bool:
@@ -36,3 +36,24 @@ async def is_courier_on_shift(courier_id: int) -> bool:
         except ValueError:
             continue
     return False
+
+async def start_courier_shift_log(courier_id: int):
+    """Создает запись о начале смены"""
+    async with async_session() as session:
+        log = CourierShiftLog(courier_id=courier_id, clock_in=datetime.now())
+        session.add(log)
+        await session.commit()
+
+async def end_courier_shift_log(courier_id: int):
+    """Закрывает последнюю открытую смену"""
+    async with async_session() as session:
+        result = await session.execute(
+            select(CourierShiftLog)
+            .where(CourierShiftLog.courier_id == courier_id)
+            .where(CourierShiftLog.clock_out.is_(None)) # Ищем незакрытую смену
+            .order_by(CourierShiftLog.clock_in.desc())
+        )
+        log = result.scalars().first()
+        if log:
+            log.clock_out = datetime.now()
+            await session.commit()
