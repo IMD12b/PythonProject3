@@ -34,18 +34,38 @@ async def manage_courier(callback: CallbackQuery):
     courier = await get_courier_by_id(courier_id)
     shifts = await get_courier_shifts(courier_id)
 
-    shifts_text = "\n".join([f"• {s['start']} — {s['end']}" for s in shifts]) if shifts else "График пуст."
-    text = f"👤 <b>{courier['name']}</b>\nСтатус: {courier['status']}\n\n🗓 <b>График:</b>\n{shifts_text}"
+    # 1. Карточка курьера
+    text = f"👤 <b>{courier['name']}</b>\nСтатус: {courier['status']}"
+    await callback.message.edit_text(text, parse_mode="HTML")
 
-    builder = InlineKeyboardBuilder()
-    # ВАЖНО: три части в callback_data — set_shift:courier:<id>
-    builder.button(text="➕ Добавить смену", callback_data=f"set_shift:courier:{courier_id}")
+    # 2. Кнопка «Добавить смену» + «Логи»
+    top = InlineKeyboardBuilder()
+    top.button(text="➕ Добавить смену", callback_data=f"set_shift:courier:{courier_id}")
+    top.button(text="📜 Логи смен", callback_data=f"view_logs:courier:{courier_id}")
+    top.adjust(2)
+    await callback.message.answer("Управление сменами:", reply_markup=top.as_markup())
+
+    # 3. Каждая смена — отдельным сообщением с ✏️ и 🗑
+    if not shifts:
+        await callback.message.answer("График пуст.")
+    else:
+        for s in shifts:
+            b = InlineKeyboardBuilder()
+            b.button(text="✏️ Редактировать", callback_data=f"edit_shift:courier:{s['id']}")
+            b.button(text="🗑 Удалить", callback_data=f"delete_shift:courier:{s['id']}")
+            b.adjust(2)
+            await callback.message.answer(
+                f"• {s['start']} — {s['end']}",
+                reply_markup=b.as_markup()
+            )
+
+    # 4. Уволить / Назад
+    bottom = InlineKeyboardBuilder()
     if courier["status"] != "rejected":
-        builder.button(text="❌ Уволить", callback_data=f"fire_courier:{courier_id}")
-    builder.button(text="⬅️ Назад", callback_data="back_to_couriers")
-    builder.adjust(1)
-
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        bottom.button(text="❌ Уволить", callback_data=f"fire_courier:{courier_id}")
+    bottom.button(text="⬅️ Назад", callback_data="back_to_couriers")
+    bottom.adjust(1)
+    await callback.message.answer("Действия:", reply_markup=bottom.as_markup())
     await callback.answer()
 
 
