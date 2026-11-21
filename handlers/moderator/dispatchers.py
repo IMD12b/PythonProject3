@@ -33,18 +33,34 @@ async def manage_dispatcher(callback: CallbackQuery):
     dispatcher = await get_dispatcher_by_id(disp_id)
     shifts = await get_dispatcher_shifts(disp_id)
 
-    shifts_text = "\n".join([f"• {s['start']} — {s['end']}" for s in shifts]) if shifts else "График пуст."
-    text = f"💼 <b>{dispatcher['name']}</b>\nСтатус: {dispatcher['status']}\n\n🗓 <b>График:</b>\n{shifts_text}"
+    text = f"💼 <b>{dispatcher['name']}</b>\nСтатус: {dispatcher['status']}"
+    await callback.message.edit_text(text, parse_mode="HTML")
 
-    builder = InlineKeyboardBuilder()
-    # Здесь уже было правильно: set_shift:dispatcher:<id>
-    builder.button(text="➕ Добавить смену", callback_data=f"set_shift:dispatcher:{disp_id}")
+    top = InlineKeyboardBuilder()
+    top.button(text="➕ Добавить смену", callback_data=f"set_shift:dispatcher:{disp_id}")
+    top.button(text="📜 Логи смен", callback_data=f"view_logs:dispatcher:{disp_id}")
+    top.adjust(2)
+    await callback.message.answer("Управление сменами:", reply_markup=top.as_markup())
+
+    if not shifts:
+        await callback.message.answer("График пуст.")
+    else:
+        for s in shifts:
+            b = InlineKeyboardBuilder()
+            b.button(text="✏️ Редактировать", callback_data=f"edit_shift:dispatcher:{s['id']}")
+            b.button(text="🗑 Удалить", callback_data=f"delete_shift:dispatcher:{s['id']}")
+            b.adjust(2)
+            await callback.message.answer(
+                f"• {s['start']} — {s['end']}",
+                reply_markup=b.as_markup()
+            )
+
+    bottom = InlineKeyboardBuilder()
     if dispatcher["status"] != "rejected":
-        builder.button(text="❌ Уволить", callback_data=f"fire_dispatcher:{disp_id}")
-    builder.button(text="⬅️ Назад", callback_data="back_to_dispatchers")
-    builder.adjust(1)
-
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        bottom.button(text="❌ Уволить", callback_data=f"fire_dispatcher:{disp_id}")
+    bottom.button(text="⬅️ Назад", callback_data="back_to_dispatchers")
+    bottom.adjust(1)
+    await callback.message.answer("Действия:", reply_markup=bottom.as_markup())
     await callback.answer()
 
 

@@ -9,15 +9,22 @@ from db.couriers import (
     get_courier_by_tg_id, update_courier_status,
     toggle_courier_shift_status, get_free_approved_couriers,
 )
-from db.courier_shift import add_shift, get_courier_shifts, is_courier_on_shift
+from db.courier_shift import (
+    add_shift, get_courier_shifts, is_courier_on_shift,
+    get_shift_by_id, update_shift, delete_shift,
+    start_courier_shift_log, end_courier_shift_log, get_courier_shift_logs,
+)
+from db.dispatcher_shifts import (
+    add_dispatcher_shift, get_dispatcher_shifts, is_dispatcher_on_shift,
+    get_dispatcher_shift_by_id, update_dispatcher_shift, delete_dispatcher_shift,
+    start_dispatcher_shift_log, end_dispatcher_shift_log, get_dispatcher_shift_logs,
+)
 from db.dispatchers import (
     register_dispatcher, get_all_dispatchers, get_dispatcher_by_id,
     get_dispatcher_by_tg_id, update_dispatcher_status,
     toggle_dispatcher_shift_status,
 )
-from db.dispatcher_shifts import (
-    add_dispatcher_shift, get_dispatcher_shifts, is_dispatcher_on_shift,
-)
+
 
 __all__ = [
     # orders
@@ -36,4 +43,8 @@ __all__ = [
     "toggle_dispatcher_shift_status",
     # dispatcher shifts
     "add_dispatcher_shift", "get_dispatcher_shifts", "is_dispatcher_on_shift",
+    "get_shift_by_id", "update_shift", "delete_shift",
+    "start_courier_shift_log", "end_courier_shift_log", "get_courier_shift_logs",
+    "get_dispatcher_shift_by_id", "update_dispatcher_shift", "delete_dispatcher_shift",
+    "start_dispatcher_shift_log", "end_dispatcher_shift_log", "get_dispatcher_shift_logs",
 ]
