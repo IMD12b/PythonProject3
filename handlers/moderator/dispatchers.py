@@ -38,8 +38,6 @@ async def manage_dispatcher(callback: CallbackQuery):
 
     top = InlineKeyboardBuilder()
     top.button(text="➕ Добавить смену", callback_data=f"set_shift:dispatcher:{disp_id}")
-    top.button(text="📜 Логи смен", callback_data=f"view_logs:dispatcher:{disp_id}")
-    top.adjust(2)
     await callback.message.answer("Управление сменами:", reply_markup=top.as_markup())
 
     if not shifts:

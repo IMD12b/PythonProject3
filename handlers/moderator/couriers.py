@@ -41,8 +41,6 @@ async def manage_courier(callback: CallbackQuery):
     # 2. Кнопка «Добавить смену» + «Логи»
     top = InlineKeyboardBuilder()
     top.button(text="➕ Добавить смену", callback_data=f"set_shift:courier:{courier_id}")
-    top.button(text="📜 Логи смен", callback_data=f"view_logs:courier:{courier_id}")
-    top.adjust(2)
     await callback.message.answer("Управление сменами:", reply_markup=top.as_markup())
 
     # 3. Каждая смена — отдельным сообщением с ✏️ и 🗑

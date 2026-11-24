@@ -1,11 +1,12 @@
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from db.couriers import get_free_approved_couriers
 from db.dispatchers import get_dispatcher_by_tg_id
+from db.orders import auto_assign_knn
 from keyboard.dispt_key import admin_main_kb, order_cancel_kb, order_confirm_kb
 from keyboard.courer_key import courier_main_kb
 from db.memory_db import (
@@ -20,6 +21,7 @@ class OrderCreation(StatesGroup):
     waiting_client_name = State()
     waiting_client_phone = State()
     waiting_price = State()
+    waiting_location = State()
     confirming = State()
 
 @dispatcher_orders_router.message(F.text == "➕ Создать заказ")
@@ -85,9 +87,43 @@ async def process_price(message: Message, state: FSMContext):
         f"💰 Сумма: {data['price']} ₽\n\n"
         f"Все верно?"
     )
+    await state.update_data(price=int(message.text))
+
+    # Создаем клавиатуру с кнопкой геолокации
+    location_kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📍 Отправить координаты", request_location=True)]],
+        resize_keyboard=True
+    )
+
+    await state.set_state(OrderCreation.waiting_location)
+    await message.answer(
+        "Последний шаг: отправь <b>точку на карте</b> для доставки.\n"
+        "Это нужно для умного автоназначения курьеров (KNN).",
+        reply_markup=location_kb,
+        parse_mode="HTML"
+    )
+
+
+@dispatcher_orders_router.message(OrderCreation.waiting_location, F.location)
+async def process_location(message: Message, state: FSMContext):
+    # Сохраняем координаты в FSM
+    await state.update_data(lat=message.location.latitude, lon=message.location.longitude)
+
+    data = await state.get_data()
+
+    # Формируем текст для подтверждения
+    confirm_text = (
+        f"<b>Проверьте данные заказа:</b>\n\n"
+        f"📍 Адрес: {data['address']}\n"
+        f"👤 Клиент: {data['client_name']}\n"
+        f"📞 Телефон: {data['client_phone']}\n"
+        f"💰 Сумма: {data['price']} ₽\n"
+        f"🗺 Координаты: {data['lat']:.4f}, {data['lon']:.4f}\n\n"
+        f"Все верно?"
+    )
+
     await state.set_state(OrderCreation.confirming)
     await message.answer(confirm_text, reply_markup=order_confirm_kb(), parse_mode="HTML")
-
 
 @dispatcher_orders_router.message(OrderCreation.confirming, F.text == "✅ Сохранить")
 async def save_order_handler(message: Message, state: FSMContext):
@@ -215,3 +251,41 @@ async def process_assignment(callback: CallbackQuery, bot: Bot):
         )
     except Exception as e:
         await callback.message.answer(f"⚠️ Не удалось уведомить курьера о заказе: {e}")
+
+
+@dispatcher_orders_router.message(F.text == "🧠 Автоназначение")
+async def auto_assign_handler(message: Message):
+    # 1. Проверяем, что диспетчер вообще существует и он на смене
+    disp = await get_dispatcher_by_tg_id(message.from_user.id)
+    if not disp:
+        return await message.answer("Тебя нет в базе диспетчеров.")
+
+    if not disp["is_on_shift"]:
+        return await message.answer("⛔ Ты не на смене! Нажми «Начать/Закончить смену», чтобы запустить распределение.")
+
+    # 2. Отправляем сообщение-заглушку, чтобы диспетчер видел, что бот "думает"
+    status_msg = await message.answer("🧠 Анализирую координаты и распределяю заказы...")
+
+    try:
+        # 3. Запускаем KNN
+        count = await auto_assign_knn()
+
+        # 4. Выдаем результат
+        if count > 0:
+            await status_msg.edit_text(
+                f"✅ Успешно распределено заказов: <b>{count}</b>.\n"
+                f"Курьеры получили заказы, которые находятся ближе всего к их первым точкам.",
+                parse_mode="HTML"
+            )
+        else:
+            await status_msg.edit_text(
+                "😔 Не удалось никого назначить.\n\n"
+                "<b>Возможные причины:</b>\n"
+                "• Нет новых заказов с координатами.\n"
+                "• Все курьеры заняты (достигнут лимит в 5 заказов).\n"
+                "• Никто из курьеров не на смене.",
+                parse_mode="HTML"
+            )
+    except Exception as e:
+        # Если алгоритм упадет (например, из-за пустых координат), бот не сломается
+        await status_msg.edit_text(f"❌ Ошибка при работе алгоритма:\n<code>{e}</code>", parse_mode="HTML")

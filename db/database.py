@@ -63,7 +63,7 @@ class Courier(Base):
 
 
     shifts: Mapped[list["Shift"]] = relationship(back_populates="courier", cascade="all, delete-orphan")
-
+    max_orders: Mapped[int] = mapped_column(default=5)
 
 class Order(Base):
     __tablename__ = "orders"
@@ -90,6 +90,8 @@ class Order(Base):
         back_populates="orders",
         foreign_keys=[courier_id]
     )
+    lat: Mapped[float | None] = mapped_column(nullable=True)
+    lon: Mapped[float | None] = mapped_column(nullable=True)
 
 class Dispatcher(Base):
     __tablename__ = "dispatchers"

@@ -1,9 +1,10 @@
 # db/orders.py
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from db.database import async_session, Courier, Order
 from db.converters import order_to_dict
+from db.ml_assign import calculate_knn_distribution
 
 
 async def add_order(order_data: dict, dispatcher_id: int) -> int:
@@ -13,6 +14,8 @@ async def add_order(order_data: dict, dispatcher_id: int) -> int:
             client_name=order_data["client_name"],
             client_phone=order_data["client_phone"],
             price=order_data["price"],
+            lat=order_data.get("lat"),  # <--- ДОБАВИЛИ
+            lon=order_data.get("lon"),
             status="🕒 Ожидает курьера",
             created_by_id=dispatcher_id
         )
@@ -120,3 +123,61 @@ async def cancel_order(order_id: int, reason: str = "Отменен") -> bool:
         order.courier_id = None
         await session.commit()
         return True
+
+
+async def auto_assign_knn() -> int:
+    async with async_session() as session:
+        # 1. Получаем заказы с координатами
+        orders_res = await session.execute(
+            select(Order).where(
+                Order.status == "🕒 Ожидает курьера",
+                Order.lat.is_not(None),
+                Order.lon.is_not(None)
+            ).order_by(Order.created_at)
+        )
+        orders = orders_res.scalars().all()
+
+        # 2. Получаем курьеров
+        couriers_res = await session.execute(
+            select(Courier).where(
+                Courier.status == "approved",
+                Courier.is_on_shift == True
+            )
+        )
+        couriers = couriers_res.scalars().all()
+
+        if not orders or not couriers:
+            return 0
+
+        # 3. Считаем текущую загрузку курьеров (сколько заказов В ПУТИ)
+        courier_loads = {}
+        for c in couriers:
+            count_res = await session.execute(
+                select(func.count(Order.id)).where(
+                    Order.courier_id == c.id,
+                    Order.status == "🚚 В пути"
+                )
+            )
+            courier_loads[c.id] = count_res.scalar()
+
+        # 4. Готовим данные для ML-функции (превращаем объекты БД в словари)
+        orders_data = [{"id": o.id, "lat": o.lat, "lon": o.lon} for o in orders]
+        couriers_data = [{"id": c.id, "max_orders": c.max_orders} for c in couriers]
+
+        # 5. Вызываем "мозг" (KNN)
+        distribution = calculate_knn_distribution(orders_data, couriers_data, courier_loads)
+
+        # 6. Сохраняем результат в БД
+        assigned_count = len(distribution)
+        if assigned_count > 0:
+            for order_id, courier_id in distribution.items():
+                # Обновляем заказ
+                await session.execute(
+                    Order.__table__.update().where(Order.id == order_id).values(
+                        courier_id=courier_id,
+                        status="🚚 В пути"
+                    )
+                )
+            await session.commit()
+
+        return assigned_count
