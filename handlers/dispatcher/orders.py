@@ -5,6 +5,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from db.couriers import get_free_approved_couriers
+from db.geocoder import get_coordinates
 from db.dispatchers import get_dispatcher_by_tg_id
 from db.orders import auto_assign_knn
 from keyboard.dispt_key import admin_main_kb, order_cancel_kb, order_confirm_kb
@@ -21,7 +22,6 @@ class OrderCreation(StatesGroup):
     waiting_client_name = State()
     waiting_client_phone = State()
     waiting_price = State()
-    waiting_location = State()
     confirming = State()
 
 @dispatcher_orders_router.message(F.text == "➕ Создать заказ")
@@ -39,12 +39,22 @@ async def start_create_order(message: Message, state: FSMContext):
 
 @dispatcher_orders_router.message(OrderCreation.waiting_address, F.text)
 async def process_address(message: Message, state: FSMContext):
+    address_text = message.text
     if message.text == "❌ Отмена":
         await state.clear()
         return await message.answer("Отменено.", reply_markup=admin_main_kb())
-    await state.update_data(address=message.text)
-    await state.set_state(OrderCreation.waiting_client_name)
-    await message.answer("Введите <b>имя клиента</b>:", parse_mode="HTML")
+
+    coords = get_coordinates(address_text)
+
+    if coords:
+        lat, lon = coords
+        await state.update_data(address=address_text, lat=lat, lon=lon)
+        await state.set_state(OrderCreation.waiting_client_name)
+        await message.answer(f"✅ Адрес найден на карте (Координаты: {lat:.4f}, {lon:.4f}).\nВведите имя клиента:")
+    else:
+        # Если адрес не найден, просим ввести заново (или можно сохранить без координат)
+        await message.answer(
+            "❌ Не удалось найти этот адрес на карте. Попробуйте ввести более точный адрес (например, 'город, улица, дом').")
 
 
 @dispatcher_orders_router.message(OrderCreation.waiting_client_name, F.text)
@@ -89,41 +99,11 @@ async def process_price(message: Message, state: FSMContext):
     )
     await state.update_data(price=int(message.text))
 
-    # Создаем клавиатуру с кнопкой геолокации
-    location_kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="📍 Отправить координаты", request_location=True)]],
-        resize_keyboard=True
-    )
-
-    await state.set_state(OrderCreation.waiting_location)
-    await message.answer(
-        "Последний шаг: отправь <b>точку на карте</b> для доставки.\n"
-        "Это нужно для умного автоназначения курьеров (KNN).",
-        reply_markup=location_kb,
-        parse_mode="HTML"
-    )
-
-
-@dispatcher_orders_router.message(OrderCreation.waiting_location, F.location)
-async def process_location(message: Message, state: FSMContext):
-    # Сохраняем координаты в FSM
-    await state.update_data(lat=message.location.latitude, lon=message.location.longitude)
-
-    data = await state.get_data()
-
-    # Формируем текст для подтверждения
-    confirm_text = (
-        f"<b>Проверьте данные заказа:</b>\n\n"
-        f"📍 Адрес: {data['address']}\n"
-        f"👤 Клиент: {data['client_name']}\n"
-        f"📞 Телефон: {data['client_phone']}\n"
-        f"💰 Сумма: {data['price']} ₽\n"
-        f"🗺 Координаты: {data['lat']:.4f}, {data['lon']:.4f}\n\n"
-        f"Все верно?"
-    )
 
     await state.set_state(OrderCreation.confirming)
     await message.answer(confirm_text, reply_markup=order_confirm_kb(), parse_mode="HTML")
+
+
 
 @dispatcher_orders_router.message(OrderCreation.confirming, F.text == "✅ Сохранить")
 async def save_order_handler(message: Message, state: FSMContext):
