@@ -4,9 +4,11 @@ import asyncio
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
+from db.couriers import get_courier_by_id
 from db.database import async_session, Courier, Order
 from db.converters import order_to_dict
 from db.ml_assign import calculate_knn_distribution
+from keyboard.courer_key import courier_main_kb
 
 
 async def add_order(order_data: dict, dispatcher_id: int) -> int:
@@ -205,11 +207,37 @@ async def auto_assign_loop(bot: Bot):
                                 status="🚚 В пути"
                             )
                         )
+                        await session.execute(
+                            Courier.__table__.update().where(Courier.id == courier_id).values(
+                                is_busy=True
+                            )
+                        )
                     await session.commit()
                     print(f"✅ Автоназначение: распределено {len(distribution)} заказов.")
 
+                    await _notify_courier(bot, order_id, courier_id)
         except Exception as e:
             print(f"⚠️ Ошибка в цикле автоназначения: {e}")
 
         # Пауза в конце цикла
         await asyncio.sleep(10)
+async def _notify_courier(bot: Bot, order_id: int, courier_id: int) -> None:
+    courier = await get_courier_by_id(courier_id)
+
+    if courier is None:
+        print(f"⚠️ Курьер {courier_id} не найден — уведомление не отправлено")
+        return
+
+    tg_id = courier.get("telegram_id")
+    if not tg_id:
+        print(f"⚠️ У курьера {courier_id} нет telegram_id — уведомление не отправлено")
+        return
+
+    try:
+        await bot.send_message(
+            chat_id=int(tg_id),
+            text="Тебе назначен новый заказ!",
+            reply_markup=courier_main_kb()
+        )
+    except Exception as e:
+        print(f"⚠️ Не удалось уведомить курьера {courier_id} о заказе {order_id}: {e}")
