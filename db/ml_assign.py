@@ -1,72 +1,55 @@
 # db/ml_assign.py
-import numpy as np
-from sklearn.neighbors import KNeighborsClassifier
+import math
 
 
-def calculate_knn_distribution(new_orders: list, couriers: list, courier_loads: dict) -> dict:
+def _haversine_km(lat1, lon1, lat2, lon2):
+    R = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+def calculate_knn_distribution(new_orders, couriers, courier_loads):
     """
-    new_orders: список словарей [{'id': 1, 'lat': 55.75, 'lon': 37.61}, ...]
-    couriers: список словарей [{'id': 10, 'max_orders': 5}, ...]
-    courier_loads: словарь текущей загрузки {10: 2, 11: 0, ...}
+    new_orders: [{'id', 'ent_lat', 'ent_lon', 'cli_lat', 'cli_lon'}, ...]
+    couriers:   [{'id', 'max_orders'}, ...]      # без lat/lon
+    courier_loads: {courier_id: current_load}
 
-    Возвращает: {order_id: courier_id} для тех заказов, которые нужно назначить.
+    Возвращает: {order_id: courier_id}
     """
-    # 1. Фильтруем курьеров, у которых есть место
-    available_couriers = [c for c in couriers]
-    if not available_couriers or not new_orders:
+    if not new_orders or not couriers:
         return {}
 
-    # 2. Формируем "обучающую выборку" (центры)
-    X_train = []
-    y_train = []
-    assigned_orders = {}  # {order_id: courier_id}
+    available = list(couriers)
+    current_load = {c["id"]: courier_loads.get(c["id"], 0) for c in couriers}
+    # «Стоимость» курьера — суммарная длина уже назначенных маршрутов
+    current_cost = {c["id"]: 0.0 for c in couriers}
+    assigned = {}
 
-    # Копируем загрузку, чтобы не менять оригинал в процессе симуляции
-    current_loads = courier_loads.copy()
+    # Длинные маршруты — первыми, чтобы не остались в конце
+    orders_sorted = sorted(
+        new_orders,
+        key=lambda o: _haversine_km(o["ent_lat"], o["ent_lon"], o["cli_lat"], o["cli_lon"]),
+        reverse=True,
+    )
 
-    # Ищем по одному заказу для каждого доступного курьера
-    for c in available_couriers:
-        for order in new_orders:
-            if order['id'] in assigned_orders:
+    for order in orders_sorted:
+        route_len = _haversine_km(
+            order["ent_lat"], order["ent_lon"], order["cli_lat"], order["cli_lon"]
+        )
+        best = None
+        for c in available:
+            limit = c.get("max_orders") or 5
+            if current_load[c["id"]] >= limit:
                 continue
+            if best is None or current_cost[c["id"]] < current_cost[best["id"]]:
+                best = c
+        if best is None:
+            break
+        assigned[order["id"]] = best["id"]
+        current_cost[best["id"]] += route_len
+        current_load[best["id"]] += 1
 
-            # Назначаем этот заказ как "якорь" для курьера
-            X_train.append([order['lat'], order['lon']])
-            y_train.append(c['id'])
-            assigned_orders[order['id']] = c['id']
-            current_loads[c['id']] = current_loads.get(c['id'], 0) + 1
-            break  # Переходим к следующему курьеру
-
-    if not X_train:
-        return {}
-
-    # 3. Обучаем KNN (k=1, ищем ближайшего соседа)
-    # Для координат используем веса, чтобы ближайшие были важнее
-    knn = KNeighborsClassifier(n_neighbors=1, weights='distance')
-    knn.fit(X_train, y_train)
-
-    # 4. Распределяем остальные заказы
-    for order in new_orders:
-        if order['id'] in assigned_orders:
-            continue  # Этот заказ уже отдан как "якорь"
-
-        # Предсказываем ближайшего курьера
-        distances, indices = knn.kneighbors([[order['lat'], order['lon']]])
-
-        # Достаем ID курьеров по индексам
-        candidate_courier_ids = [y_train[idx] for idx in indices[0]]
-
-        # Идем по списку от самого близкого к самому дальнему
-        for courier_id in candidate_courier_ids:
-            courier = next((c for c in available_couriers if c['id'] == courier_id), None)
-
-            if courier:
-                limit = courier.get('max_orders') or 5
-
-                # Проверяем, есть ли у этого конкретного курьера место
-                if current_loads.get(courier['id'], 0) < limit:
-                    assigned_orders[order['id']] = courier['id']
-                    current_loads[courier['id']] += 1
-                    break  # Заказ успешно назначен, переходим к следующему заказу
-
-    return assigned_orders
+    return assigned

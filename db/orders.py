@@ -20,6 +20,7 @@ async def add_order(order_data: dict, dispatcher_id: int) -> int:
             price=order_data["price"],
             lat=order_data.get("lat"),  # <--- ДОБАВИЛИ
             lon=order_data.get("lon"),
+            enterprise_id=order_data["enterprise_id"],
             status="🕒 Ожидает курьера",
             created_by_id=dispatcher_id
         )
@@ -32,7 +33,9 @@ async def add_order(order_data: dict, dispatcher_id: int) -> int:
 async def get_all_orders() -> list[dict]:
     async with async_session() as session:
         result = await session.execute(
-            select(Order).options(selectinload(Order.courier)).order_by(Order.id)
+        select(Order).options(selectinload(Order.courier),
+        selectinload(Order.enterprise),
+        ).order_by(Order.id)
         )
         return [order_to_dict(o) for o in result.scalars().all()]
 
@@ -40,7 +43,9 @@ async def get_all_orders() -> list[dict]:
 async def get_order_by_id(order_id: int) -> dict | None:
     async with async_session() as session:
         result = await session.execute(
-            select(Order).options(selectinload(Order.courier)).where(Order.id == order_id)
+            select(Order).options(selectinload(Order.courier),
+            selectinload(Order.enterprise),
+            ).order_by(Order.id)
         )
         order = result.scalar_one_or_none()
         return order_to_dict(order) if order else None
@@ -49,11 +54,12 @@ async def get_order_by_id(order_id: int) -> dict | None:
 async def get_available_orders() -> list[dict]:
     async with async_session() as session:
         result = await session.execute(
-            select(Order)
-            .options(selectinload(Order.courier))
-            .where(Order.status == "🕒 Ожидает курьера")
-            .where(Order.courier_id.is_(None))
-            .order_by(Order.id)
+            select(Order).options(selectinload(Order.courier),
+            selectinload(Order.enterprise),
+            ).order_by(Order.id)
+        .where(Order.status == "🕒 Ожидает курьера")
+        .where(Order.courier_id.is_(None))
+        .order_by(Order.id)
         )
         return [order_to_dict(o) for o in result.scalars().all()]
 
@@ -61,8 +67,10 @@ async def get_available_orders() -> list[dict]:
 async def get_orders_by_courier(courier_id: int) -> list[dict]:
     async with async_session() as session:
         result = await session.execute(
-            select(Order)
-            .options(selectinload(Order.courier))
+            select(Order).options(selectinload(Order.courier),
+            selectinload(Order.enterprise),
+            ).order_by(Order.id)
+
             .where(Order.courier_id == courier_id)
             .order_by(Order.id)
         )
@@ -129,7 +137,7 @@ async def cancel_order(order_id: int, reason: str = "Отменен") -> bool:
         return True
 
 
-async def auto_assign_loop(bot: Bot):
+async def auto_assign_loop(bot: Bot, dispatcher_tg_id: int | None = None):
     print("🤖 Фоновый алгоритм автоназначения запущен...")
 
     while True:
@@ -137,11 +145,11 @@ async def auto_assign_loop(bot: Bot):
             async with async_session() as session:
                 # 1. Берем новые заказы
                 orders_res = await session.execute(
-                    select(Order).where(
+                    select(Order).options(selectinload(Order.enterprise)).where(
                         Order.status == "🕒 Ожидает курьера",
                         Order.lat.is_not(None),
-                        Order.lon.is_not(None)
-                    ).order_by(Order.created_at)
+                        Order.lon.is_not(None),
+                    )
                 )
                 orders = orders_res.scalars().all()
 
@@ -192,30 +200,42 @@ async def auto_assign_loop(bot: Bot):
                     continue
 
                 # 4. Готовим данные ТОЛЬКО для доступных курьеров
-                orders_data = [{"id": o.id, "lat": o.lat, "lon": o.lon} for o in orders]
-                couriers_data = [{"id": c.id, "max_orders": c.max_orders} for c in available_couriers]
+                orders_data = [
+                    {
+                        "id": o.id,
+                        "ent_lat": o.enterprise.lat,
+                        "ent_lon": o.enterprise.lon,
+                        "cli_lat": o.lat,
+                        "cli_lon": o.lon,
+                    }
+                    for o in orders
+                    if o.enterprise and o.lat is not None and o.lon is not None
+                ]
+                couriers_data = [
+                    {"id": c.id, "max_orders": c.max_orders}
+                    for c in available_couriers
+                ]
 
                 # 5. Запускаем KNN
                 distribution = calculate_knn_distribution(orders_data, couriers_data, courier_loads)
 
                 if distribution:
-                    # 6. Сохраняем результат
                     for order_id, courier_id in distribution.items():
                         await session.execute(
                             Order.__table__.update().where(Order.id == order_id).values(
                                 courier_id=courier_id,
-                                status="🚚 В пути"
+                                status="🚚 В пути",
                             )
                         )
                         await session.execute(
                             Courier.__table__.update().where(Courier.id == courier_id).values(
-                                is_busy=True
+                                is_busy=True,
                             )
                         )
                     await session.commit()
                     print(f"✅ Автоназначение: распределено {len(distribution)} заказов.")
-
-                    await _notify_courier(bot, order_id, courier_id)
+                    for order_id, courier_id in distribution.items():
+                        await _notify_courier(bot, order_id, courier_id)  # ← внутри цикла
         except Exception as e:
             print(f"⚠️ Ошибка в цикле автоназначения: {e}")
 

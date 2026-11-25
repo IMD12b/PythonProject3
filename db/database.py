@@ -92,6 +92,11 @@ class Order(Base):
     )
     lat: Mapped[float | None] = mapped_column(nullable=True)
     lon: Mapped[float | None] = mapped_column(nullable=True)
+    enterprise_id: Mapped[int] = mapped_column(
+        ForeignKey("enterprises.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    enterprise: Mapped["Enterprise"] = relationship(back_populates="orders")
 
 class Dispatcher(Base):
     __tablename__ = "dispatchers"
@@ -131,6 +136,17 @@ class DispatcherShiftLog(Base):
     clock_in: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     clock_out: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     dispatcher: Mapped["Dispatcher"] = relationship(back_populates="shift_logs")
+
+class Enterprise(Base):
+    __tablename__ = "enterprises"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(150))
+    address: Mapped[str] = mapped_column(String(255))
+    lat: Mapped[float] = mapped_column(nullable=False)
+    lon: Mapped[float] = mapped_column(nullable=False)
+
+    orders: Mapped[list["Order"]] = relationship(back_populates="enterprise")
 
 async def init_db() -> None:
     """Создаёт таблицы, если их нет. Вызвать один раз при старте."""
