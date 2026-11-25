@@ -5,6 +5,8 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 from config import BOT_TOKEN, PROXY_URL
 import logging
+
+from db.orders import auto_assign_loop
 from handlers.start import start_router
 from handlers.courier import courier_orders_router, courier_shifts_router
 from handlers.dispatcher import (
@@ -49,6 +51,9 @@ async def main():
     dp.include_router(mod_shifts_router)
     dp.include_router(mod_stats_router)
     dp.include_router(mod_logs_router)
+
+    asyncio.create_task(auto_assign_loop(bot))
+
     print("Бот запущен!")
     await dp.start_polling(bot)
 

@@ -1,3 +1,5 @@
+import asyncio
+
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -7,7 +9,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from db.couriers import get_free_approved_couriers
 from db.geocoder import get_coordinates
 from db.dispatchers import get_dispatcher_by_tg_id
-from db.orders import auto_assign_knn
+from db.orders import auto_assign_loop
 from keyboard.dispt_key import admin_main_kb, order_cancel_kb, order_confirm_kb
 from keyboard.courer_key import courier_main_kb
 from db.memory_db import (
@@ -234,38 +236,19 @@ async def process_assignment(callback: CallbackQuery, bot: Bot):
 
 
 @dispatcher_orders_router.message(F.text == "🧠 Автоназначение")
-async def auto_assign_handler(message: Message):
-    # 1. Проверяем, что диспетчер вообще существует и он на смене
+async def auto_assign_handler(message: Message, bot: Bot):
+    # Проверяем диспетчера
     disp = await get_dispatcher_by_tg_id(message.from_user.id)
-    if not disp:
-        return await message.answer("Тебя нет в базе диспетчеров.")
+    if not disp or not disp["is_on_shift"]:
+        return await message.answer("⛔ Ты не на смене!")
 
-    if not disp["is_on_shift"]:
-        return await message.answer("⛔ Ты не на смене! Нажми «Начать/Закончить смену», чтобы запустить распределение.")
+    # Отправляем мгновенный ответ
+    await message.answer(
+        "🚀 <b>Фоновое автоназначение запущено!</b>\n\n"
+        "Бот будет распределять заказы по мере их поступления. "
+        "Как только он закончит (или заказы кончатся), я пришлю тебе отчет.",
+        parse_mode="HTML"
+    )
 
-    # 2. Отправляем сообщение-заглушку, чтобы диспетчер видел, что бот "думает"
-    status_msg = await message.answer("🧠 Анализирую координаты и распределяю заказы...")
-
-    try:
-        # 3. Запускаем KNN
-        count = await auto_assign_knn()
-
-        # 4. Выдаем результат
-        if count > 0:
-            await status_msg.edit_text(
-                f"✅ Успешно распределено заказов: <b>{count}</b>.\n"
-                f"Курьеры получили заказы, которые находятся ближе всего к их первым точкам.",
-                parse_mode="HTML"
-            )
-        else:
-            await status_msg.edit_text(
-                "😔 Не удалось никого назначить.\n\n"
-                "<b>Возможные причины:</b>\n"
-                "• Нет новых заказов с координатами.\n"
-                "• Все курьеры заняты (достигнут лимит в 5 заказов).\n"
-                "• Никто из курьеров не на смене.",
-                parse_mode="HTML"
-            )
-    except Exception as e:
-        # Если алгоритм упадет (например, из-за пустых координат), бот не сломается
-        await status_msg.edit_text(f"❌ Ошибка при работе алгоритма:\n<code>{e}</code>", parse_mode="HTML")
+    # ЗАПУСКАЕМ В ФОНЕ (не блокирует бота)
+    asyncio.create_task(auto_assign_loop(bot, message.from_user.id))

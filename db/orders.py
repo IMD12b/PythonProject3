@@ -1,4 +1,6 @@
 # db/orders.py
+from aiogram import Bot
+import asyncio
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
@@ -125,59 +127,89 @@ async def cancel_order(order_id: int, reason: str = "Отменен") -> bool:
         return True
 
 
-async def auto_assign_knn() -> int:
-    async with async_session() as session:
-        # 1. Получаем заказы с координатами
-        orders_res = await session.execute(
-            select(Order).where(
-                Order.status == "🕒 Ожидает курьера",
-                Order.lat.is_not(None),
-                Order.lon.is_not(None)
-            ).order_by(Order.created_at)
-        )
-        orders = orders_res.scalars().all()
+async def auto_assign_loop(bot: Bot):
+    print("🤖 Фоновый алгоритм автоназначения запущен...")
 
-        # 2. Получаем курьеров
-        couriers_res = await session.execute(
-            select(Courier).where(
-                Courier.status == "approved",
-                Courier.is_on_shift == True
-            )
-        )
-        couriers = couriers_res.scalars().all()
-
-        if not orders or not couriers:
-            return 0
-
-        # 3. Считаем текущую загрузку курьеров (сколько заказов В ПУТИ)
-        courier_loads = {}
-        for c in couriers:
-            count_res = await session.execute(
-                select(func.count(Order.id)).where(
-                    Order.courier_id == c.id,
-                    Order.status == "🚚 В пути"
+    while True:
+        try:
+            async with async_session() as session:
+                # 1. Берем новые заказы
+                orders_res = await session.execute(
+                    select(Order).where(
+                        Order.status == "🕒 Ожидает курьера",
+                        Order.lat.is_not(None),
+                        Order.lon.is_not(None)
+                    ).order_by(Order.created_at)
                 )
-            )
-            courier_loads[c.id] = count_res.scalar()
+                orders = orders_res.scalars().all()
 
-        # 4. Готовим данные для ML-функции (превращаем объекты БД в словари)
-        orders_data = [{"id": o.id, "lat": o.lat, "lon": o.lon} for o in orders]
-        couriers_data = [{"id": c.id, "max_orders": c.max_orders} for c in couriers]
+                # Если заказов нет — сразу спим
+                if not orders:
+                    await asyncio.sleep(60)
+                    continue
 
-        # 5. Вызываем "мозг" (KNN)
-        distribution = calculate_knn_distribution(orders_data, couriers_data, courier_loads)
-
-        # 6. Сохраняем результат в БД
-        assigned_count = len(distribution)
-        if assigned_count > 0:
-            for order_id, courier_id in distribution.items():
-                # Обновляем заказ
-                await session.execute(
-                    Order.__table__.update().where(Order.id == order_id).values(
-                        courier_id=courier_id,
-                        status="🚚 В пути"
+                # 2. Берем курьеров
+                couriers_res = await session.execute(
+                    select(Courier).where(
+                        Courier.status == "approved",
+                        Courier.is_on_shift == True
                     )
                 )
-            await session.commit()
+                couriers = couriers_res.scalars().all()
 
-        return assigned_count
+                # Если курьеров нет — сразу спим
+                if not couriers:
+                    await asyncio.sleep(60)
+                    continue
+
+                # 3. ПРОВЕРКА ДО KNN: считаем реальную загрузку
+                courier_loads = {}
+                available_couriers = []  # <--- Список только тех, кому можно дать заказ
+
+                for c in couriers:
+                    count_res = await session.execute(
+                        select(func.count(Order.id)).where(
+                            Order.courier_id == c.id,
+                            Order.status == "🚚 В пути"
+                        )
+                    )
+                    real_load = count_res.scalar()
+                    courier_loads[c.id] = real_load
+
+                    # Синхронизируем флаг is_busy
+                    limit = c.max_orders or 5
+                    c.is_busy = real_load >= limit
+
+                    # Если у курьера есть свободные слоты — добавляем в список
+                    if real_load < limit:
+                        available_couriers.append(c)
+
+                # Если все курьеры забиты — спать
+                if not available_couriers:
+                    await asyncio.sleep(10)
+                    continue
+
+                # 4. Готовим данные ТОЛЬКО для доступных курьеров
+                orders_data = [{"id": o.id, "lat": o.lat, "lon": o.lon} for o in orders]
+                couriers_data = [{"id": c.id, "max_orders": c.max_orders} for c in available_couriers]
+
+                # 5. Запускаем KNN
+                distribution = calculate_knn_distribution(orders_data, couriers_data, courier_loads)
+
+                if distribution:
+                    # 6. Сохраняем результат
+                    for order_id, courier_id in distribution.items():
+                        await session.execute(
+                            Order.__table__.update().where(Order.id == order_id).values(
+                                courier_id=courier_id,
+                                status="🚚 В пути"
+                            )
+                        )
+                    await session.commit()
+                    print(f"✅ Автоназначение: распределено {len(distribution)} заказов.")
+
+        except Exception as e:
+            print(f"⚠️ Ошибка в цикле автоназначения: {e}")
+
+        # Пауза в конце цикла
+        await asyncio.sleep(10)
