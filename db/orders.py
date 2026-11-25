@@ -145,7 +145,7 @@ async def auto_assign_loop(bot: Bot):
 
                 # Если заказов нет — сразу спим
                 if not orders:
-                    await asyncio.sleep(60)
+                    await asyncio.sleep(10)
                     continue
 
                 # 2. Берем курьеров
@@ -159,7 +159,7 @@ async def auto_assign_loop(bot: Bot):
 
                 # Если курьеров нет — сразу спим
                 if not couriers:
-                    await asyncio.sleep(60)
+                    await asyncio.sleep(10)
                     continue
 
                 # 3. ПРОВЕРКА ДО KNN: считаем реальную загрузку

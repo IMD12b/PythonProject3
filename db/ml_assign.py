@@ -12,7 +12,7 @@ def calculate_knn_distribution(new_orders: list, couriers: list, courier_loads: 
     Возвращает: {order_id: courier_id} для тех заказов, которые нужно назначить.
     """
     # 1. Фильтруем курьеров, у которых есть место
-    available_couriers = [c for c in couriers if courier_loads.get(c['id'], 0) < c['max_orders']]
+    available_couriers = [c for c in couriers]
     if not available_couriers or not new_orders:
         return {}
 
@@ -51,13 +51,22 @@ def calculate_knn_distribution(new_orders: list, couriers: list, courier_loads: 
             continue  # Этот заказ уже отдан как "якорь"
 
         # Предсказываем ближайшего курьера
-        predicted_courier_id = int(knn.predict([[order['lat'], order['lon']]])[0])
+        distances, indices = knn.kneighbors([[order['lat'], order['lon']]])
 
-        # Проверяем, есть ли у курьера место
-        courier = next((c for c in available_couriers if c['id'] == predicted_courier_id), None)
-        if courier and current_loads.get(courier['id'], 0) < courier['max_orders']:
-            assigned_orders[order['id']] = courier['id']
-            current_loads[courier['id']] += 1
-        # Если места нет — заказ остается в пуле (мы его просто не добавляем в словарь)
+        # Достаем ID курьеров по индексам
+        candidate_courier_ids = [y_train[idx] for idx in indices[0]]
+
+        # Идем по списку от самого близкого к самому дальнему
+        for courier_id in candidate_courier_ids:
+            courier = next((c for c in available_couriers if c['id'] == courier_id), None)
+
+            if courier:
+                limit = courier.get('max_orders') or 5
+
+                # Проверяем, есть ли у этого конкретного курьера место
+                if current_loads.get(courier['id'], 0) < limit:
+                    assigned_orders[order['id']] = courier['id']
+                    current_loads[courier['id']] += 1
+                    break  # Заказ успешно назначен, переходим к следующему заказу
 
     return assigned_orders
