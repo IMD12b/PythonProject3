@@ -11,6 +11,10 @@ def order_to_dict(order: Order) -> dict:
         "price": order.price,
         "status": order.status,
         "courier_name": order.courier.name if order.courier else None,
+        "enterprise_id": order.enterprise_id,
+        "enterprise_name": order.enterprise.name if order.enterprise else None,
+        "enterprise_lat": order.enterprise.lat if order.enterprise else None,
+        "enterprise_lon": order.enterprise.lon if order.enterprise else None,
     }
 
 

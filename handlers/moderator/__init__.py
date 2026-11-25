@@ -5,6 +5,7 @@ from handlers.moderator.dispatchers import mod_dispatchers_router
 from handlers.moderator.shifts import mod_shifts_router
 from handlers.moderator.stats import mod_stats_router
 from handlers.moderator.logs import mod_logs_router
+from handlers.moderator.enterprises import moderator_enterprises_router
 __all__ = [
     "mod_applications_router",
     "mod_couriers_router",
@@ -12,4 +13,5 @@ __all__ = [
     "mod_shifts_router",
     "mod_stats_router",
     "mod_logs_router",
+    "moderator_enterprises_router",
 ]

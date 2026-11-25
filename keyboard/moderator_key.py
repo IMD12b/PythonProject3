@@ -7,7 +7,16 @@ def moderator_main_kb():
             [KeyboardButton(text="💼 Заявки диспетчеров")],
             [KeyboardButton(text="📋 Список курьеров")],
             [KeyboardButton(text="💼 список диспетчеров")],
-            [KeyboardButton(text="📈 Статистика")]
+            [KeyboardButton(text="📈 Статистика")],
+            [KeyboardButton(text="🏭 Предприятия")]
+        ],
+        resize_keyboard=True
+    )
+def enterprises_kb():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ Добавить предприятие")],
+            [KeyboardButton(text="⬅️ Назад")]
         ],
         resize_keyboard=True
     )

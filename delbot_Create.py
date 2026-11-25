@@ -20,7 +20,7 @@ from handlers.moderator import (
     mod_dispatchers_router,
     mod_shifts_router,
     mod_stats_router,
-    mod_logs_router
+    mod_logs_router, moderator_enterprises_router
 )
 
 from db.database import init_db          # ← ДОБАВИТЬ
@@ -51,7 +51,7 @@ async def main():
     dp.include_router(mod_shifts_router)
     dp.include_router(mod_stats_router)
     dp.include_router(mod_logs_router)
-
+    dp.include_router(moderator_enterprises_router)
     asyncio.create_task(auto_assign_loop(bot))
 
     print("Бот запущен!")

@@ -16,11 +16,14 @@ from db.memory_db import (
     add_order, get_all_orders, get_order_by_id,
     get_all_couriers, get_courier_by_id, assign_courier,
 )
+from db.enterprises import get_all_enterprises, get_enterprise_by_id
+
 
 dispatcher_orders_router = Router()
 
 class OrderCreation(StatesGroup):
-    waiting_address = State()
+    waiting_enterprise = State()  # выбор предприятия
+    waiting_address = State()  # адрес клиента
     waiting_client_name = State()
     waiting_client_phone = State()
     waiting_price = State()
@@ -35,9 +38,41 @@ async def start_create_order(message: Message, state: FSMContext):
     if not disp["is_on_shift"]:
         return await message.answer("⛔ Ты не на смене! Нажми «Начать/Закончить смену», чтобы начать работу.")
 
-    await state.set_state(OrderCreation.waiting_address)
-    await message.answer("Введите <b>адрес доставки</b>:", reply_markup=order_cancel_kb(), parse_mode="HTML")
+    enterprises = await get_all_enterprises()
+    if not enterprises:
+        return await message.answer("🏭 Предприятий пока нет. Обратитесь к модератору.")
 
+    builder = InlineKeyboardBuilder()
+    for e in enterprises:
+        builder.button(text=e["name"], callback_data=f"pick_ent:{e['id']}")
+    builder.adjust(1)
+
+    await state.set_state(OrderCreation.waiting_enterprise)        # ← ждём выбора предприятия
+    await message.answer(
+        "Выберите <b>предприятие</b>, откуда курьер заберёт заказ:",
+        reply_markup=builder.as_markup(),                          # ← прикрепляем клавиатуру
+        parse_mode="HTML",
+    )
+@dispatcher_orders_router.callback_query(
+    OrderCreation.waiting_enterprise,
+    F.data.startswith("pick_ent:"),
+)
+async def pick_enterprise(callback: CallbackQuery, state: FSMContext):
+    ent_id = int(callback.data.split(":")[1])
+    ent = await get_enterprise_by_id(ent_id)
+    if not ent:
+        return await callback.answer("Предприятие не найдено", show_alert=True)
+
+    await state.update_data(enterprise_id=ent_id)                  # ← ключевая строка
+    await state.set_state(OrderCreation.waiting_address)
+
+    await callback.message.edit_text(
+        f"🏭 Предприятие: <b>{ent['name']}</b>\n"
+        f"📍 {ent['address']}\n\n"
+        f"Введите <b>адрес доставки</b>:",
+        parse_mode="HTML",
+    )
+    await callback.answer()
 
 @dispatcher_orders_router.message(OrderCreation.waiting_address, F.text)
 async def process_address(message: Message, state: FSMContext):
@@ -251,4 +286,4 @@ async def auto_assign_handler(message: Message, bot: Bot):
     )
 
     # ЗАПУСКАЕМ В ФОНЕ (не блокирует бота)
-    asyncio.create_task(auto_assign_loop(bot, message.from_user.id))
+    asyncio.create_task(auto_assign_loop(bot))

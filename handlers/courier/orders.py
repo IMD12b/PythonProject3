@@ -36,8 +36,8 @@ async def show_my_order(message: Message):
 
     await message.answer(
         f"🚚 <b>Твой текущий заказ #{active_order['id']}</b>\n\n"
+        f"🏭 {active_order['enterprise_id']}\n"
         f"📍 {active_order['address']}\n"
-        f"👤 {active_order['client_name']}\n"
         f"{phone_text}",
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
